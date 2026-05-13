@@ -209,8 +209,9 @@ async function createPR(
   title: string,
   body: string,
   ctx: ExtensionContext,
+  remoteName: string,
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
-  const remote = exec("git remote get-url origin 2>/dev/null || git remote get-url gitea 2>/dev/null", ctx.cwd);
+  const remote = exec(`git remote get-url ${remoteName || "origin"}`, ctx.cwd);
   if (!remote.ok) return { ok: false, error: "No git remote found" };
 
   // Extract repo info from remote URL
@@ -468,6 +469,7 @@ export default function (pi: ExtensionAPI) {
       title: Type.String({ description: "PR title" }),
       body: Type.Optional(Type.String({ description: "PR description with details, testing notes, etc." })),
       base: Type.Optional(Type.String({ description: "Target branch (default: dev)" })),
+      remote: Type.Optional(Type.String({ description: "Git remote name to push to and create PR on (auto-detects if multiple exist)" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const branch = currentBranch(ctx.cwd);
@@ -482,8 +484,18 @@ export default function (pi: ExtensionAPI) {
         };
       }
 
+      // Determine remote — prefer gitea, then origin, then ask
+      let remoteName = params.remote || "";
+      if (!remoteName) {
+        const remotes = exec("git remote", ctx.cwd);
+        const remoteList = remotes.ok ? remotes.stdout.split("\n").filter(Boolean) : [];
+        if (remoteList.includes("gitea")) remoteName = "gitea";
+        else if (remoteList.includes("origin")) remoteName = "origin";
+        else remoteName = remoteList[0] || "origin";
+      }
+
       // Push
-      const push = exec(`git push origin ${branch} 2>/dev/null || git push gitea ${branch} 2>/dev/null || git push`, ctx.cwd);
+      const push = exec(`git push ${remoteName} ${branch} 2>/dev/null || git push ${remoteName} ${branch}`, ctx.cwd);
       if (!push.ok) {
         return {
           content: [{ type: "text", text: `Push failed: ${push.stderr}` }],
@@ -497,7 +509,7 @@ export default function (pi: ExtensionAPI) {
       if (currentIssueId) prBody += `\n\nCloses #${currentIssueId}`;
 
       // Create PR
-      const pr = await createPR(branch, base, params.title, prBody, ctx);
+      const pr = await createPR(branch, base, params.title, prBody, ctx, remoteName);
       if (!pr.ok) {
         return {
           content: [{ type: "text", text: `Push succeeded but PR creation failed: ${pr.error}\n\nCreate PR manually at your git host.` }],

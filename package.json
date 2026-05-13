@@ -1,8 +1,16 @@
 {
   "name": "pi-contrib-gate",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Contribution gateway for AI agents — enforce branch naming, conventional commits, pre-commit quality gates, and PR automation.",
-  "keywords": ["pi-package", "pi-extension", "governance", "git", "conventional-commits", "ci", "devops"],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "governance",
+    "git",
+    "conventional-commits",
+    "ci",
+    "devops"
+  ],
   "author": "nandal <nandal@users.noreply.github.com>",
   "repository": {
     "type": "git",
@@ -29,6 +37,8 @@
     "typebox": "*"
   },
   "pi": {
-    "extensions": ["./src/index.ts"]
+    "extensions": [
+      "./src/index.ts"
+    ]
   }
 }

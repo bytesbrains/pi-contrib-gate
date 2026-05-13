@@ -495,7 +495,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       // Push
-      const push = exec(`git push ${remoteName} ${branch} 2>/dev/null || git push ${remoteName} ${branch}`, ctx.cwd);
+      const push = exec(`git push -u ${remoteName} ${branch}`, ctx.cwd);
       if (!push.ok) {
         return {
           content: [{ type: "text", text: `Push failed: ${push.stderr}` }],

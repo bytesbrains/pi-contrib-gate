@@ -21,6 +21,10 @@ export const startWorkTool = {
     if (!isClean(ctx.cwd)) {
       return { content: [{ type: "text", text: "⚠️ Working tree is not clean. Commit or stash changes before starting new work." }], isError: true, details: { clean: false } };
     }
+
+    // Pull latest dev before branching
+    const pull = exec("git pull --ff-only gitea dev 2>/dev/null || git pull --ff-only origin dev 2>/dev/null || true", ctx.cwd);
+
     if (!["feat", "fix", "chore"].includes(branchType)) {
       return { content: [{ type: "text", text: `Invalid branch type: "${branchType}". Use: feat, fix, or chore.` }], isError: true, details: {} };
     }

@@ -1,7 +1,7 @@
 {
   "name": "pi-contrib-gate",
-  "version": "1.0.2",
-  "description": "Contribution gateway for AI agents — enforce branch naming, conventional commits, pre-commit quality gates, and PR automation.",
+  "version": "1.1.0",
+  "description": "Contribution gateway for AI agents \u2014 enforce branch naming, conventional commits, pre-commit quality gates, and PR automation.",
   "keywords": [
     "pi-package",
     "pi-extension",

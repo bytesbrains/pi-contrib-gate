@@ -14,6 +14,22 @@ export function currentBranch(cwd: string): string {
   return exec("git branch --show-current", cwd).stdout;
 }
 
+/**
+ * Extract a Gitea issue ID from a branch name.
+ * Supports: feat/issue-42, fix/issue-7, chore/issue-99, or bare issue-42.
+ */
+export function extractIssueFromBranch(branch: string): string | null {
+  const match = branch.match(/^(?:(?:feat|fix|chore)\/)?issue-(\d+)$/);
+  return match ? match[1] : null;
+}
+
+/**
+ * Get the current linked issue ID from session state or branch name.
+ */
+export function getLinkedIssueId(cwd: string): string | null {
+  return (globalThis as any).__contrib_issueId || extractIssueFromBranch(currentBranch(cwd)) || null;
+}
+
 export function isClean(cwd: string): boolean {
   const r = exec("git status --porcelain", cwd);
   return r.ok && r.stdout === "";

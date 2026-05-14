@@ -10,6 +10,7 @@ import { startWorkTool } from "./tools/start_work";
 import { proposeTool } from "./tools/propose";
 import { submitTool } from "./tools/submit";
 import { statusTool } from "./tools/status";
+import { getLinkedIssueId } from "./helpers";
 
 export default function (pi: ExtensionAPI) {
   pi.on("tool_call", interceptToolCall);
@@ -17,6 +18,15 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool(proposeTool);
   pi.registerTool(submitTool);
   pi.registerTool(statusTool);
+
+  // Auto-detect linked issue from branch name on session start/resume
+  pi.on("session_start", (_event, ctx) => {
+    const issueId = getLinkedIssueId(ctx.cwd);
+    if (issueId && !(globalThis as any).__contrib_issueId) {
+      (globalThis as any).__contrib_issueId = issueId;
+    }
+  });
+
   pi.on("session_shutdown", () => {
     delete (globalThis as any).__contrib_issueId;
     delete (globalThis as any).__contrib_lastHash;

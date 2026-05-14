@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "../config";
-import { exec, currentBranch, getStagedStats, countUnrelatedDirs, shellEscape } from "../helpers";
+import { exec, currentBranch, getStagedStats, countUnrelatedDirs, shellEscape, getLinkedIssueId } from "../helpers";
 import { validateBranchName, validateConventionalCommit, runQualityGate } from "../validate";
 
 export const proposeTool = {
@@ -15,6 +15,26 @@ export const proposeTool = {
   async execute(_toolCallId: string, params: any, _signal: any, _onUpdate: any, ctx: ExtensionContext) {
     const config = loadConfig(ctx.cwd);
     const branch = currentBranch(ctx.cwd);
+
+    // ── Require a linked issue ──
+    const issueId = getLinkedIssueId(ctx.cwd);
+    if (!issueId) {
+      return {
+        content: [{
+          type: "text",
+          text: [
+            `❌ No Gitea issue linked.`,
+            ``,
+            `Before committing, link your work to an issue with:`,
+            `  contrib_start_work(issue_id)`,
+            ``,
+            `This ensures commits and PRs are traceable to the correct issue.`,
+          ].join("\n"),
+        }],
+        isError: true,
+        details: {},
+      };
+    }
 
     const branchCheck = validateBranchName(branch);
     if (!branchCheck.ok) return { content: [{ type: "text", text: branchCheck.error }], isError: true, details: {} };
@@ -57,7 +77,6 @@ export const proposeTool = {
       }
     }
 
-    const issueId = (globalThis as any).__contrib_issueId || null;
     let fullMessage = params.message;
     if (params.body) fullMessage += `\n\n${params.body}`;
     if (issueId) fullMessage += `\n\nRefs: #${issueId}`;

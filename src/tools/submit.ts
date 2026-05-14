@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { exec, currentBranch, hasUnpushed, createPR, shellEscape } from "../helpers";
+import { exec, currentBranch, hasUnpushed, createPR, shellEscape, getLinkedIssueId } from "../helpers";
 
 export const submitTool = {
   name: "contrib_submit" as const,
@@ -15,6 +15,25 @@ export const submitTool = {
   async execute(_toolCallId: string, params: any, _signal: any, _onUpdate: any, ctx: ExtensionContext) {
     const branch = currentBranch(ctx.cwd);
     const base = params.base || "dev";
+
+    const issueId = getLinkedIssueId(ctx.cwd);
+    if (!issueId) {
+      return {
+        content: [{
+          type: "text",
+          text: [
+            `❌ No Gitea issue linked.`,
+            ``,
+            `Before submitting a PR, link your work to an issue with:`,
+            `  contrib_start_work(issue_id)`,
+            ``,
+            `This ensures the PR closes the correct issue.`,
+          ].join("\n"),
+        }],
+        isError: true,
+        details: {},
+      };
+    }
 
     if (!hasUnpushed(ctx.cwd) && !(globalThis as any).__contrib_lastHash) {
       return { content: [{ type: "text", text: "No commits to push. Run contrib_propose() first." }], isError: true, details: {} };
@@ -60,7 +79,6 @@ export const submitTool = {
     const push = exec(`git push -u ${shellEscape(remoteName)} ${shellEscape(branch)}`, ctx.cwd);
     if (!push.ok) return { content: [{ type: "text", text: `Push failed: ${push.stderr}` }], isError: true, details: {} };
 
-    const issueId = (globalThis as any).__contrib_issueId || null;
     let prBody = params.body || "";
     if (issueId) prBody += `\n\nCloses #${issueId}`;
 

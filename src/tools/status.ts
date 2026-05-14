@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { exec, currentBranch, isClean, hasUnpushed } from "../helpers";
+import { exec, currentBranch, isClean, hasUnpushed, getLinkedIssueId } from "../helpers";
 
 export const statusTool = {
   name: "contrib_status" as const,
@@ -11,7 +11,7 @@ export const statusTool = {
     const branch = currentBranch(ctx.cwd);
     const clean = isClean(ctx.cwd);
     const unpushed = hasUnpushed(ctx.cwd);
-    const issueId = (globalThis as any).__contrib_issueId || null;
+    const issueId = getLinkedIssueId(ctx.cwd);
     const lastHash = (globalThis as any).__contrib_lastHash || null;
 
     const status = exec("git status --short", ctx.cwd);

@@ -6,6 +6,7 @@ import {
   exec, currentBranch,
   isClean, isMergeInProgress, isRebaseInProgress, isConflictInProgress,
   scanForConflictMarkers, getStagedStats, countUnrelatedDirs,
+  extractIssueFromBranch,
 } from "../helpers";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -223,6 +224,42 @@ describe("countUnrelatedDirs", () => {
 
   it("handles empty file list", () => {
     expect(countUnrelatedDirs([])).toBe(0);
+  });
+});
+
+// ═══════════════════════════════════════
+// Issue extraction from branches
+// ═══════════════════════════════════════
+describe("extractIssueFromBranch", () => {
+  it("extracts issue ID from feat/issue-N", () => {
+    expect(extractIssueFromBranch("feat/issue-42")).toBe("42");
+    expect(extractIssueFromBranch("feat/issue-7")).toBe("7");
+    expect(extractIssueFromBranch("feat/issue-123")).toBe("123");
+  });
+
+  it("extracts issue ID from fix/issue-N", () => {
+    expect(extractIssueFromBranch("fix/issue-99")).toBe("99");
+  });
+
+  it("extracts issue ID from chore/issue-N", () => {
+    expect(extractIssueFromBranch("chore/issue-1")).toBe("1");
+  });
+
+  it("extracts issue ID from bare issue-N", () => {
+    expect(extractIssueFromBranch("issue-42")).toBe("42");
+  });
+
+  it("returns null for branches without issue ID", () => {
+    expect(extractIssueFromBranch("feat/add-login")).toBe(null);
+    expect(extractIssueFromBranch("fix/bug-fix")).toBe(null);
+    expect(extractIssueFromBranch("main")).toBe(null);
+    expect(extractIssueFromBranch("dev")).toBe(null);
+    expect(extractIssueFromBranch("random-branch")).toBe(null);
+  });
+
+  it("returns null for issue-N in middle of branch name", () => {
+    expect(extractIssueFromBranch("feat/issue-42-hotfix")).toBe(null);
+    expect(extractIssueFromBranch("prefix-issue-42")).toBe(null);
   });
 });
 

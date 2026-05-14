@@ -5,6 +5,8 @@
 
 > Contribution gateway for AI agents — enforce branch naming, conventional commits, pre-commit quality gates, and PR automation. **Agents don't call `git push` — they call `contrib_submit()`.**
 
+> ⚡ **Every piece of work must be linked to a Gitea issue.** The gate blocks file modifications, commits, and PR creation until an issue is linked via `contrib_start_work(issue_id)`.
+
 ## Install
 
 ```bash
@@ -24,9 +26,12 @@ pi install npm:pi-contrib-gate
 
 The gate **passively monitors** all `bash` tool calls and:
 
-- ⛔ Blocks `git push` to protected branches (`main`, `dev`, `production`)
+- ⛔ Blocks `write`/`edit` operations when no Gitea issue is linked (reminds agent to call `contrib_start_work(issue_id)` first)
+- ⛔ Blocks `write`/`edit` on protected branches (`main`, `dev`, `production`)
+- ⛔ Blocks `contrib_propose()` and `contrib_submit()` when no issue is linked
 - ⚠️ Warns on `git push --force`
 - ⚠️ Warns on non-conventional commit messages
+- ⚠️ Soft-warns on feature branches without a recognized issue ID
 - All blocks can be overridden with user confirmation
 
 ## Quality Gates

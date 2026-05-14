@@ -1,6 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "./config";
-import { exec, isMergeInProgress, isRebaseInProgress, isConflictInProgress, isClean } from "./helpers";
+import { exec, isMergeInProgress, isRebaseInProgress, isConflictInProgress, isClean, getLinkedIssueId } from "./helpers";
 import { validateConventionalCommit } from "./validate";
 
 const PROTECTED_BRANCHES = ["dev", "main", "master", "production"];
@@ -13,13 +13,40 @@ function onProtectedBranch(cwd: string): boolean {
 export async function interceptToolCall(event: any, ctx: ExtensionContext) {
   const config = loadConfig(ctx.cwd);
 
-  // Block file modifications on protected branches
-  if (["write", "edit"].includes(event.toolName) && onProtectedBranch(ctx.cwd)) {
+  // ═══════════════════════════════════════════
+  // Block file modifications without a linked issue
+  // ═══════════════════════════════════════════
+  if (["write", "edit"].includes(event.toolName)) {
     const branch = exec("git branch --show-current", ctx.cwd).stdout;
-    return {
-      block: true,
-      reason: `Cannot modify files directly on "${branch}". Use contrib_start_work(issue_id) to create a feature branch first.`,
-    };
+
+    // Protected branches: strict block
+    if (PROTECTED_BRANCHES.includes(branch)) {
+      return {
+        block: true,
+        reason: `Cannot modify files directly on "${branch}". Use contrib_start_work(issue_id) to create a feature branch first.`,
+      };
+    }
+
+    // Non-feature, non-protected branch with no linked issue: block early
+    const isFeatureBranch = /^(feat|fix|chore)\//.test(branch);
+    const issueId = getLinkedIssueId(ctx.cwd);
+
+    if (!issueId && !isFeatureBranch) {
+      return {
+        block: true,
+        reason: `No Gitea issue linked. Before making changes, link your work to an issue with contrib_start_work(issue_id).\n\nThis creates a properly named branch and links it to an issue so commits and PRs are traceable.`,
+      };
+    }
+
+    if (!issueId && isFeatureBranch) {
+      // Feature branch but no issue found in branch name or session state.
+      // Warn but allow — the agent may be resuming work from a branch created
+      // outside the current session.
+      ctx.ui.notify(
+        "No issue linked",
+        `You're on feature branch "${branch}" but no Gitea issue is linked.\nRun contrib_start_work(issue_id) to link an issue before committing.`,
+      );
+    }
   }
 
   if (event.toolName !== "bash" || typeof event.input.command !== "string") return;

@@ -20,6 +20,34 @@ export const submitTool = {
       return { content: [{ type: "text", text: "No commits to push. Run contrib_propose() first." }], isError: true, details: {} };
     }
 
+    // Check PR body for content that breaks CI shell scripts
+    const prBodyRaw = params.body || "";
+    if (prBodyRaw.includes("```")) {
+      return {
+        content: [{
+          type: "text",
+          text: [
+            "⚠️ PR body contains triple-backtick code blocks (```).",
+            "",
+            "These break the CI agent signature check step because the PR body",
+            "gets injected into a shell script. Use plain text instead:",
+            "",
+            "Instead of:",
+            "  ```bash",
+            "  docker compose up -d",
+            "  ```",
+            "",
+            "Use:",
+            "  docker compose up -d",
+            "",
+            "Remove all ``` markers and retry.",
+          ].join("\n"),
+        }],
+        isError: true,
+        details: {},
+      };
+    }
+
     let remoteName = params.remote || "";
     if (!remoteName) {
       const remotes = exec("git remote", ctx.cwd);

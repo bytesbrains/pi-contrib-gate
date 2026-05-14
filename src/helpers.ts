@@ -19,6 +19,50 @@ export function isClean(cwd: string): boolean {
   return r.ok && r.stdout === "";
 }
 
+/** True if git merge is in progress (MERGE_HEAD exists). */
+export function isMergeInProgress(cwd: string): boolean {
+  const r = exec("git rev-parse --verify MERGE_HEAD 2>/dev/null", cwd);
+  return r.ok;
+}
+
+/** True if git rebase is in progress. */
+export function isRebaseInProgress(cwd: string): boolean {
+  const merge = exec("test -d .git/rebase-merge && echo yes || echo no", cwd);
+  const apply = exec("test -d .git/rebase-apply && echo yes || echo no", cwd);
+  return merge.stdout === "yes" || apply.stdout === "yes";
+}
+
+/** True if any conflict is in progress (merge or rebase). */
+export function isConflictInProgress(cwd: string): boolean {
+  return isMergeInProgress(cwd) || isRebaseInProgress(cwd);
+}
+
+/**
+ * Scan staged changes for unresolved conflict markers.
+ * Returns list of files containing <<<<<<< or >>>>>>> markers.
+ */
+export function scanForConflictMarkers(cwd: string): string[] {
+  const diff = exec(
+    "git diff --cached -U0 2>/dev/null | grep -nE '^\\+<<<<<<< |^\\+>>>>>>> ' || true",
+    cwd,
+  );
+  if (!diff.stdout) return [];
+
+  // Also check the working tree for any unstaged conflict markers (safety net)
+  const staged = exec("git diff --cached --name-only 2>/dev/null", cwd);
+  const stagedFiles = staged.ok ? staged.stdout.split("\n").filter(Boolean) : [];
+
+  const conflicts: string[] = [];
+  for (const file of stagedFiles) {
+    const r = exec(
+      `git show :0:${file} 2>/dev/null | grep -nE '<<<<<<< |>>>>>>> ' || true`,
+      cwd,
+    );
+    if (r.stdout) conflicts.push(file);
+  }
+  return conflicts;
+}
+
 export function hasUnpushed(cwd: string): boolean {
   const branch = currentBranch(cwd);
   const r = exec(`git log origin/${branch}..HEAD --oneline 2>/dev/null || git log gitea/${branch}..HEAD --oneline 2>/dev/null || echo ""`, cwd);

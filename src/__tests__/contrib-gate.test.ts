@@ -2,7 +2,11 @@ import { describe, it, expect } from "vitest";
 import { DEFAULT_CONFIG } from "../types";
 import { loadConfig } from "../config";
 import { validateBranchName, validateConventionalCommit, runQualityGate } from "../validate";
-import { exec, currentBranch, isClean } from "../helpers";
+import {
+  exec, currentBranch,
+  isClean, isMergeInProgress, isRebaseInProgress, isConflictInProgress,
+  scanForConflictMarkers,
+} from "../helpers";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -142,5 +146,104 @@ describe("runQualityGate", () => {
     const config = { ...DEFAULT_CONFIG, quality: { ...DEFAULT_CONFIG.quality, typeCheck: false, lint: false } };
     const result = runQualityGate(process.cwd(), config);
     expect(typeof result.ok).toBe("boolean");
+  });
+
+  it("fails when staged files contain conflict markers", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-qg-conflict-"));
+    exec("git init && git config user.email test@test && git config user.name test", tmp);
+
+    // Seed initial commit
+    fs.writeFileSync(path.join(tmp, "file.txt"), "clean\n");
+    exec("git add file.txt && git commit -m init", tmp);
+
+    // Write conflict markers and stage
+    fs.writeFileSync(path.join(tmp, "file.txt"), "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> dev\n");
+    exec("git add file.txt", tmp);
+
+    const config = { ...DEFAULT_CONFIG, quality: { ...DEFAULT_CONFIG.quality, typeCheck: false, lint: false } };
+    const result = runQualityGate(tmp, config);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e: string) => e.includes("conflict markers"))).toBe(true);
+    }
+
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+});
+
+// ═══════════════════════════════════════
+// Merge conflict helpers
+// ═══════════════════════════════════════
+describe("isMergeInProgress", () => {
+  it("returns false when no merge in progress", () => {
+    expect(isMergeInProgress(process.cwd())).toBe(false);
+  });
+});
+
+describe("isRebaseInProgress", () => {
+  it("returns false when no rebase in progress", () => {
+    expect(isRebaseInProgress(process.cwd())).toBe(false);
+  });
+});
+
+describe("isConflictInProgress", () => {
+  it("returns false when no conflict in progress", () => {
+    expect(isConflictInProgress(process.cwd())).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════
+// Conflict marker scanning
+// ═══════════════════════════════════════
+describe("scanForConflictMarkers", () => {
+  it("returns empty when no conflict markers in staged files", () => {
+    const result = scanForConflictMarkers(process.cwd());
+    expect(result).toEqual([]);
+  });
+
+  it("detects conflict markers in a staged file (simulated via git show)", () => {
+    // Create a temp repo to test conflict detection properly
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-conflict-"));
+    exec("git init && git config user.email test@test && git config user.name test", tmp);
+
+    // Create a file with conflict markers
+    const filePath = path.join(tmp, "test.txt");
+    fs.writeFileSync(filePath, [
+      "line before",
+      "<<<<<<< HEAD",
+      "our change",
+      "=======",
+      "their change",
+      ">>>>>>> dev",
+      "line after",
+    ].join("\n"));
+
+    // Stage and commit a clean version first (need initial commit for git show :0:)
+    fs.writeFileSync(filePath, "clean content\n");
+    exec(`git add test.txt && git commit -m "init"`, tmp);
+
+    // Now write conflict markers and stage
+    fs.writeFileSync(filePath, "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> dev\n");
+    exec("git add test.txt", tmp);
+
+    const result = scanForConflictMarkers(tmp);
+    expect(result).toContain("test.txt");
+
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("returns empty for clean staged files", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-clean-"));
+    exec("git init && git config user.email test@test && git config user.name test", tmp);
+
+    fs.writeFileSync(path.join(tmp, "clean.txt"), "no conflicts here\n");
+    exec("git add clean.txt && git commit -m init", tmp);
+    fs.writeFileSync(path.join(tmp, "clean.txt"), "updated clean content\n");
+    exec("git add clean.txt", tmp);
+
+    const result = scanForConflictMarkers(tmp);
+    expect(result).toEqual([]);
+
+    fs.rmSync(tmp, { recursive: true, force: true });
   });
 });

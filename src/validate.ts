@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import type { ContribConfig } from "./types";
-import { exec } from "./helpers";
+import { exec, scanForConflictMarkers } from "./helpers";
 
 export function validateConventionalCommit(message: string, config: ContribConfig): { ok: true } | { ok: false; error: string } {
   const firstLine = message.split("\n")[0].trim();
@@ -21,6 +21,15 @@ export function validateBranchName(branch: string): { ok: true } | { ok: false; 
 
 export function runQualityGate(cwd: string, config: ContribConfig): { ok: true } | { ok: false; errors: string[] } {
   const errors: string[] = [];
+
+  // ── Conflict marker check (MUST come first — safety-critical) ──
+  const conflictFiles = scanForConflictMarkers(cwd);
+  if (conflictFiles.length > 0) {
+    errors.push(
+      `Unresolved merge conflict markers found in staged files: ${conflictFiles.join(", ")}.\n  Remove all <<<<<<<, =======, >>>>>>> markers before committing.`,
+    );
+  }
+
   const diff = exec("git diff --cached --name-only", cwd);
   if (diff.ok) {
     const files = diff.stdout.split("\n").filter(Boolean);

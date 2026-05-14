@@ -1,7 +1,41 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { ContribConfig } from "./types";
-import { DEFAULT_CONFIG } from "./types";
+import type { ContribConfig, BestPracticesConfig } from "./types";
+import { DEFAULT_CONFIG, BEST_PRACTICES_DEFAULTS } from "./types";
+
+function parseBool(val: string | undefined, def: boolean): boolean {
+  if (val === undefined) return def;
+  return val !== "false" && val !== "no" && val !== "0";
+}
+
+function loadBestPractices(result: Record<string, unknown>): BestPracticesConfig {
+  const rawGuidance = result["commits.bestPractices.guidanceText"] as string | undefined;
+  let guidanceText: string[];
+  if (rawGuidance) {
+    // Split by | for multi-line YAML block scalars or newline-separated
+    guidanceText = rawGuidance
+      .split(/\||\n/)
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+  } else {
+    guidanceText = [...BEST_PRACTICES_DEFAULTS.guidanceText];
+  }
+  return {
+    shortFrequentCommits: parseBool(
+      result["commits.bestPractices.shortFrequentCommits"] as string | undefined,
+      BEST_PRACTICES_DEFAULTS.shortFrequentCommits,
+    ),
+    maxLinesPerCommit:
+      parseInt(result["commits.bestPractices.maxLinesPerCommit"] as string) || BEST_PRACTICES_DEFAULTS.maxLinesPerCommit,
+    requireAtomic: parseBool(
+      result["commits.bestPractices.requireAtomic"] as string | undefined,
+      BEST_PRACTICES_DEFAULTS.requireAtomic,
+    ),
+    maxUnrelatedDirs:
+      parseInt(result["commits.bestPractices.maxUnrelatedDirs"] as string) || BEST_PRACTICES_DEFAULTS.maxUnrelatedDirs,
+    guidanceText,
+  };
+}
 
 export function loadConfig(cwd: string): ContribConfig {
   const configPath = path.join(cwd, ".contribrc.yml");
@@ -29,6 +63,7 @@ export function loadConfig(cwd: string): ContribConfig {
         convention: ((result["commits.convention"] as string) || DEFAULT_CONFIG.commits.convention) as "conventional" | "simple",
         maxSubjectLength: parseInt(result["commits.maxSubjectLength"] as string) || DEFAULT_CONFIG.commits.maxSubjectLength,
         scopes: (result["commits.scopes"] as string)?.split(",").map(s => s.trim()) || [],
+        bestPractices: loadBestPractices(result),
       },
       quality: {
         lint: result["quality.lint"] !== "false",

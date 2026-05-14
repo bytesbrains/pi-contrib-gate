@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "../config";
-import { exec, currentBranch } from "../helpers";
+import { exec, currentBranch, getStagedStats, countUnrelatedDirs } from "../helpers";
 import { validateBranchName, validateConventionalCommit, runQualityGate } from "../validate";
 
 export const proposeTool = {
@@ -32,6 +32,31 @@ export const proposeTool = {
       return { content: [{ type: "text", text: `❌ Quality gate failed:\n\n${quality.errors.map((e: string) => `  - ${e}`).join("\n")}` }], isError: true, details: { errors: quality.errors } };
     }
 
+    // ── Best-practice soft warnings (non-blocking) ──
+    const bestPractices = config.commits.bestPractices;
+    const warnings: string[] = [];
+
+    if (bestPractices.maxLinesPerCommit > 0) {
+      const { linesAdded } = getStagedStats(ctx.cwd);
+      if (linesAdded > bestPractices.maxLinesPerCommit) {
+        warnings.push(
+          `⚠️  Commit size (${linesAdded} lines) exceeds best-practice threshold (${bestPractices.maxLinesPerCommit} lines).`,
+          `    Consider splitting into smaller, more frequent commits.`,
+        );
+      }
+    }
+
+    if (bestPractices.requireAtomic) {
+      const { files } = getStagedStats(ctx.cwd);
+      const dirCount = countUnrelatedDirs(files);
+      if (dirCount > bestPractices.maxUnrelatedDirs) {
+        warnings.push(
+          `⚠️  This commit touches ${dirCount} unrelated directories (threshold: ${bestPractices.maxUnrelatedDirs}).`,
+          `    It may not be atomic. Each commit should do one logical thing.`,
+        );
+      }
+    }
+
     const issueId = (globalThis as any).__contrib_issueId || null;
     let fullMessage = params.message;
     if (params.body) fullMessage += `\n\n${params.body}`;
@@ -43,9 +68,34 @@ export const proposeTool = {
     const hash = exec("git rev-parse HEAD", ctx.cwd).stdout.slice(0, 8);
     (globalThis as any).__contrib_lastHash = hash;
 
+    // Build output message with best-practice guidance and warnings
+    const outputLines: string[] = [
+      `✅ Changes committed (${hash})`,
+      `   Branch: ${branch}`,
+      `   Message: ${params.message}`,
+    ];
+
+    // Inject best-practice guidance when enabled
+    if (bestPractices.shortFrequentCommits && bestPractices.guidanceText.length > 0) {
+      outputLines.push(``, `📋 Best Practice Guidance:`);
+      for (const line of bestPractices.guidanceText) {
+        outputLines.push(`   • ${line}`);
+      }
+    }
+
+    // Append soft warnings
+    if (warnings.length > 0) {
+      outputLines.push(``, `--- Soft Warnings (non-blocking) ---`);
+      for (const w of warnings) {
+        outputLines.push(w);
+      }
+    }
+
+    outputLines.push(``, `Next: contrib_submit(title, body) to push and create PR.`);
+
     return {
-      content: [{ type: "text", text: [`✅ Changes committed (${hash})`, `   Branch: ${branch}`, `   Message: ${params.message}`, ``, `Next: contrib_submit(title, body) to push and create PR.`].join("\n") }],
-      details: { branch, commit: hash, message: params.message },
+      content: [{ type: "text", text: outputLines.join("\n") }],
+      details: { branch, commit: hash, message: params.message, warnings: warnings.length > 0 ? warnings : undefined },
     };
   },
 };

@@ -69,6 +69,47 @@ export function hasUnpushed(cwd: string): boolean {
   return r.ok && r.stdout.length > 0;
 }
 
+/**
+ * Get the list of staged files and their change counts.
+ * Returns { files, linesAdded }.
+ */
+export function getStagedStats(cwd: string): { files: string[]; linesAdded: number } {
+  const diff = exec("git diff --cached --name-only", cwd);
+  const files = diff.ok ? diff.stdout.split("\n").filter(Boolean) : [];
+  const loc = exec("git diff --cached --numstat | awk '{s+=$1} END {print s}'", cwd);
+  const linesAdded = loc.ok ? parseInt(loc.stdout) || 0 : 0;
+  return { files, linesAdded };
+}
+
+/**
+ * Count the number of distinct top-level directories touched by a list of files.
+ * Used as a heuristic for non-atomic commits (touching many unrelated areas).
+ */
+export function countUnrelatedDirs(files: string[]): number {
+  if (files.length === 0) return 0;
+
+  const dirs = new Set<string>();
+  const hasNesting = files.some(f => f.split("/").length >= 3);
+
+  for (const file of files) {
+    const parts = file.split("/");
+    if (hasNesting) {
+      // For deeply nested paths, use first two segments as directory grouping
+      const dir = parts.length >= 2 ? parts.slice(0, 2).join("/") : parts[0];
+      dirs.add(dir);
+    } else {
+      // For flat paths (dir/file.ext), first segment is the directory
+      const topDir = parts[0];
+      if (topDir && topDir !== ".") {
+        dirs.add(topDir);
+      } else {
+        dirs.add("(root)");
+      }
+    }
+  }
+  return dirs.size;
+}
+
 export async function createPR(
   branch: string,
   base: string,

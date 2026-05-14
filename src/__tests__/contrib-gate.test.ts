@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { DEFAULT_CONFIG } from "../types";
+import { DEFAULT_CONFIG, BEST_PRACTICES_DEFAULTS } from "../types";
 import { loadConfig } from "../config";
 import { validateBranchName, validateConventionalCommit, runQualityGate } from "../validate";
 import {
   exec, currentBranch,
   isClean, isMergeInProgress, isRebaseInProgress, isConflictInProgress,
-  scanForConflictMarkers,
+  scanForConflictMarkers, getStagedStats, countUnrelatedDirs,
 } from "../helpers";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -46,6 +46,50 @@ describe("ContribConfig", () => {
   it("handles missing config gracefully", () => {
     const config = loadConfig("/nonexistent/path");
     expect(config.branches.featPattern).toBe("feat/");
+  });
+
+  it("loads bestPractices defaults", () => {
+    const config = loadConfig("/nonexistent/path");
+    expect(config.commits.bestPractices.shortFrequentCommits).toBe(true);
+    expect(config.commits.bestPractices.maxLinesPerCommit).toBe(150);
+    expect(config.commits.bestPractices.requireAtomic).toBe(true);
+    expect(config.commits.bestPractices.maxUnrelatedDirs).toBe(3);
+    expect(config.commits.bestPractices.guidanceText).toEqual(BEST_PRACTICES_DEFAULTS.guidanceText);
+  });
+
+  it("parses bestPractices config keys", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-test-"));
+    fs.writeFileSync(path.join(tmp, ".contribrc.yml"), [
+      "commits.bestPractices.shortFrequentCommits: false",
+      "commits.bestPractices.maxLinesPerCommit: 200",
+      "commits.bestPractices.requireAtomic: false",
+      "commits.bestPractices.maxUnrelatedDirs: 5",
+      'commits.bestPractices.guidanceText: "Be thoughtful | Keep it small | Test everything"',
+    ].join("\n"));
+    const config = loadConfig(tmp);
+    expect(config.commits.bestPractices.shortFrequentCommits).toBe(false);
+    expect(config.commits.bestPractices.maxLinesPerCommit).toBe(200);
+    expect(config.commits.bestPractices.requireAtomic).toBe(false);
+    expect(config.commits.bestPractices.maxUnrelatedDirs).toBe(5);
+    expect(config.commits.bestPractices.guidanceText).toEqual(["Be thoughtful", "Keep it small", "Test everything"]);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("backward-compatible with existing configs (no bestPractices keys)", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-test-"));
+    fs.writeFileSync(path.join(tmp, ".contribrc.yml"), [
+      "quality.maxLinesAdded: 600",
+      "quality.doctorAudit: false",
+    ].join("\n"));
+    const config = loadConfig(tmp);
+    // Existing keys still work
+    expect(config.quality.maxLinesAdded).toBe(600);
+    expect(config.quality.doctorAudit).toBe(false);
+    // Best practices get defaults
+    expect(config.commits.bestPractices.maxLinesPerCommit).toBe(150);
+    expect(config.commits.bestPractices.shortFrequentCommits).toBe(true);
+    expect(config.commits.bestPractices.requireAtomic).toBe(true);
+    fs.rmSync(tmp, { recursive: true, force: true });
   });
 });
 
@@ -134,6 +178,51 @@ describe("isClean", () => {
   it("checks working tree status", () => {
     const clean = isClean(process.cwd());
     expect(typeof clean).toBe("boolean");
+  });
+});
+
+describe("getStagedStats", () => {
+  it("returns empty when nothing staged", () => {
+    const stats = getStagedStats(process.cwd());
+    expect(stats.files).toEqual([]);
+    expect(stats.linesAdded).toBe(0);
+  });
+
+  it("returns files and line counts for staged changes", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-stats-"));
+    exec("git init && git config user.email test@test && git config user.name test", tmp);
+    fs.writeFileSync(path.join(tmp, "a.txt"), "hello\nworld\n");
+    exec("git add a.txt && git commit -m init", tmp);
+    fs.writeFileSync(path.join(tmp, "a.txt"), "hello\nworld\nnew line\n");
+    exec("git add a.txt", tmp);
+    const stats = getStagedStats(tmp);
+    expect(stats.files).toContain("a.txt");
+    expect(stats.linesAdded).toBeGreaterThan(0);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+});
+
+describe("countUnrelatedDirs", () => {
+  it("counts distinct directories from file paths", () => {
+    const files = ["src/a.ts", "src/b.ts", "tests/c.test.ts"];
+    expect(countUnrelatedDirs(files)).toBe(2);
+  });
+
+  it("returns 1 for single-directory changes", () => {
+    const files = ["src/index.ts", "src/config.ts", "src/types.ts"];
+    // All in src/, but 2 subdirectories: src/* (all same level, no subdirs)
+    // All have just "src" as top dir, subdirs would be "src" only
+    const result = countUnrelatedDirs(files);
+    expect(result).toBe(1);
+  });
+
+  it("detects deeply nested unrelated subdirectories", () => {
+    const files = ["contrib-gate/src/a.ts", "contrib-gate/test/b.ts", "ci-gate/src/c.ts"];
+    expect(countUnrelatedDirs(files)).toBe(3);
+  });
+
+  it("handles empty file list", () => {
+    expect(countUnrelatedDirs([])).toBe(0);
   });
 });
 

@@ -82,6 +82,28 @@ export function getStagedStats(cwd: string): { files: string[]; linesAdded: numb
 }
 
 /**
+ * Escape a string for safe interpolation into a shell command.
+ * Wraps value in single quotes after escaping embedded single quotes.
+ */
+export function shellEscape(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+/**
+ * Escape a string for safe interpolation into a double-quoted shell context.
+ * Escapes: $, `, \, ", !, newlines
+ */
+export function shellEscapeDoubleQuoted(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\$/g, "\\$")
+    .replace(/`/g, "\\`")
+    .replace(/"/g, '\\"')
+    .replace(/!/g, "\\!")
+    .replace(/\n/g, " ");
+}
+
+/**
  * Count the number of distinct top-level directories touched by a list of files.
  * Used as a heuristic for non-atomic commits (touching many unrelated areas).
  */
@@ -132,7 +154,10 @@ export async function createPR(
     const credMatch = url.match(/:\/\/([^:]+):([^@]+)@/);
     token = credMatch ? credMatch[2] : "";
   } else if (url.includes("github.com")) {
-    const r = exec(`gh pr create --base ${base} --head ${branch} --title "${title}" --body "${body}"`, ctx.cwd);
+    // gh CLI handles its own argument quoting — only escape double-quotes and strip newlines
+    const safeTitle = title.replace(/"/g, '\\"').replace(/\n/g, " ");
+    const safeBody = body.replace(/"/g, '\\"').replace(/\n/g, " ");
+    const r = exec(`gh pr create --base ${shellEscape(base)} --head ${shellEscape(branch)} --title "${safeTitle}" --body "${safeBody}"`, ctx.cwd);
     if (r.ok) {
       const lines = r.stdout.split("\n");
       const prUrl = lines.find(l => l.includes("github.com")) || r.stdout;
@@ -143,18 +168,25 @@ export async function createPR(
 
   if (!apiUrl) return { ok: false, error: "Unsupported remote. Use Gitea or GitHub." };
 
-  const headers = token
-    ? `-H "Authorization: token ${token}" -H "Content-Type: application/json"`
-    : '-H "Content-Type: application/json"';
-
-  const payload = JSON.stringify({ title, head: branch, base, body });
-  const r = exec(`curl -sf -X POST "${apiUrl}/pulls" ${headers} -d '${payload}'`, ctx.cwd);
-  if (!r.ok) return { ok: false, error: r.stderr || "PR creation failed" };
+  // Use fetch() instead of shell-executed curl — avoids token exposure in process lists
+  const fetchHeaders: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) fetchHeaders["Authorization"] = `token ${token}`;
 
   try {
-    const data = JSON.parse(r.stdout);
-    return { ok: true, url: data.html_url || `${apiUrl}/pulls/${data.number}` };
-  } catch {
-    return { ok: true, url: r.stdout };
+    const res = await fetch(`${apiUrl}/pulls`, {
+      method: "POST",
+      headers: fetchHeaders,
+      body: JSON.stringify({ title, head: branch, base, body }),
+    });
+    const text = await res.text();
+    if (!res.ok) return { ok: false, error: text || `HTTP ${res.status}` };
+    try {
+      const data = JSON.parse(text);
+      return { ok: true, url: data.html_url || `${apiUrl}/pulls/${data.number}` };
+    } catch {
+      return { ok: true, url: text };
+    }
+  } catch (e: any) {
+    return { ok: false, error: e.message || "Network error" };
   }
 }

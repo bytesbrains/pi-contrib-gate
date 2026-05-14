@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "../config";
-import { exec, isClean } from "../helpers";
+import { exec, isClean, shellEscape } from "../helpers";
 import { currentIssueId, currentBranchType } from "../state";
 
 export const startWorkTool = {
@@ -28,7 +28,7 @@ export const startWorkTool = {
     if (!["feat", "fix", "chore"].includes(branchType)) {
       return { content: [{ type: "text", text: `Invalid branch type: "${branchType}". Use: feat, fix, or chore.` }], isError: true, details: {} };
     }
-    const r = exec(`git checkout -b ${branchName}`, ctx.cwd);
+    const r = exec(`git checkout -b ${shellEscape(branchName)}`, ctx.cwd);
     if (!r.ok) {
       return { content: [{ type: "text", text: `Failed to create branch: ${r.stderr}` }], isError: true, details: {} };
     }

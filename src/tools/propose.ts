@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "../config";
-import { exec, currentBranch, getStagedStats, countUnrelatedDirs } from "../helpers";
+import { exec, currentBranch, getStagedStats, countUnrelatedDirs, shellEscape } from "../helpers";
 import { validateBranchName, validateConventionalCommit, runQualityGate } from "../validate";
 
 export const proposeTool = {
@@ -62,7 +62,7 @@ export const proposeTool = {
     if (params.body) fullMessage += `\n\n${params.body}`;
     if (issueId) fullMessage += `\n\nRefs: #${issueId}`;
 
-    const commit = exec(`git commit -m "${fullMessage.replace(/"/g, '\\"')}"`, ctx.cwd);
+    const commit = exec(`git commit -m ${shellEscape(fullMessage)}`, ctx.cwd);
     if (!commit.ok) return { content: [{ type: "text", text: `Commit failed: ${commit.stderr}` }], isError: true, details: {} };
 
     const hash = exec("git rev-parse HEAD", ctx.cwd).stdout.slice(0, 8);

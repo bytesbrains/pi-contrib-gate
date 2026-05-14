@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { exec, currentBranch, hasUnpushed, createPR } from "../helpers";
+import { exec, currentBranch, hasUnpushed, createPR, shellEscape } from "../helpers";
 
 export const submitTool = {
   name: "contrib_submit" as const,
@@ -57,7 +57,7 @@ export const submitTool = {
       else remoteName = remoteList[0] || "origin";
     }
 
-    const push = exec(`git push -u ${remoteName} ${branch}`, ctx.cwd);
+    const push = exec(`git push -u ${shellEscape(remoteName)} ${shellEscape(branch)}`, ctx.cwd);
     if (!push.ok) return { content: [{ type: "text", text: `Push failed: ${push.stderr}` }], isError: true, details: {} };
 
     const issueId = (globalThis as any).__contrib_issueId || null;

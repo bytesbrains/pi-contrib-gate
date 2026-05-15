@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { exec, currentBranch, isClean, hasUnpushed, getLinkedIssueId } from "../helpers";
+import { exec, currentBranch, isClean, hasUnpushed, getLinkedIssueId, remoteBranchExists, checkBranchPRState } from "../helpers";
 
 export const statusTool = {
   name: "contrib_status" as const,
@@ -25,6 +25,32 @@ export const statusTool = {
       `   Unpushed: ${unpushed ? "⚠️ yes" : "✅ no"}`,
       `   Last commit: ${lastHash || "(none)"}`,
     ];
+
+    // ── Remote branch health ──
+    lines.push("");
+    const remote = remoteBranchExists(ctx.cwd);
+    if (branch && !remote.exists) {
+      lines.push(`   🌐 Remote branch: ❌ deleted (PR likely merged)`);
+      lines.push(`      ⚠️  Do NOT continue work on this branch.`);
+      lines.push(`      → Run contrib_start_work(issue_id) to start fresh work.`);
+    } else if (remote.exists) {
+      lines.push(`   🌐 Remote branch: ✅ on ${remote.remoteName}`);
+    }
+
+    // ── PR state ──
+    if (branch) {
+      const pr = await checkBranchPRState(ctx.cwd);
+      if (pr) {
+        const prIcon = pr.state === "merged" ? "🔀" : pr.state === "open" ? "🟢" : "🔴";
+        lines.push(`   📬 PR: ${prIcon} ${pr.state.toUpperCase()}`);
+        lines.push(`      ${pr.url}`);
+        if (pr.state === "merged") {
+          lines.push(`      ⚠️  This PR was already merged. Start fresh work.`);
+        }
+      } else {
+        lines.push(`   📬 PR: not found`);
+      }
+    }
 
     if (!clean) {
       lines.push("", "Changed files:");

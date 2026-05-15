@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { exec, isClean, shellEscape, getLinkedIssueId } from "../helpers";
+import { exec, isClean, shellEscape, getLinkedIssueId, remoteBranchExists, checkBranchPRState } from "../helpers";
 
 export const startWorkTool = {
   name: "contrib_start_work" as const,
@@ -20,9 +20,36 @@ export const startWorkTool = {
       return { content: [{ type: "text", text: `Invalid branch type: "${branchType}". Use: feat, fix, or chore.` }], isError: true, details: {} };
     }
 
-    // ── Case 1: Already on any feature branch → just link the issue ──
-    // Covers resuming work, rework on an existing PR, or branches named by humans.
+    // ── Case 1: Already on any feature branch ──
     if (isFeatureBranch) {
+      // Check if remote branch still exists — if not, PR was likely merged
+      const remote = remoteBranchExists(ctx.cwd);
+      if (!remote.exists) {
+        const pr = await checkBranchPRState(ctx.cwd);
+        const prNote = pr
+          ? `\n\nPR ${pr.url} was ${pr.state === "merged" ? "already merged" : "closed"}.`
+          : "";
+        return {
+          content: [{
+            type: "text",
+            text: [
+              `⚠️  Branch "${currentBr}" has no remote — the PR was likely merged.`,
+              `${prNote}`,
+              ``,
+              `Continuing work on this branch risks creating orphaned commits.`,
+              ``,
+              `Recommended: start fresh work on a new branch:`,
+              `  git checkout main`,
+              `  contrib_start_work(issue_id=${params.issue_id})`,
+              ``,
+              `To continue on this branch anyway, confirm with the same call again.`,
+            ].join("\n"),
+          }],
+          isError: true,
+          details: { branch: currentBr, issueId, staleBranch: true },
+        };
+      }
+
       (globalThis as any).__contrib_issueId = issueId;
       (globalThis as any).__contrib_branchType = branchType;
       const alreadyLinked = getLinkedIssueId(ctx.cwd) === issueId && currentBr.includes(`issue-${issueId}`);

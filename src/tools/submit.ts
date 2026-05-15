@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { exec, currentBranch, hasUnpushed, createPR, shellEscape, getLinkedIssueId } from "../helpers";
+import { exec, currentBranch, hasUnpushed, createPR, shellEscape, getLinkedIssueId, remoteBranchExists, checkBranchPRState } from "../helpers";
 
 export const submitTool = {
   name: "contrib_submit" as const,
@@ -37,6 +37,38 @@ export const submitTool = {
 
     if (!hasUnpushed(ctx.cwd) && !(globalThis as any).__contrib_lastHash) {
       return { content: [{ type: "text", text: "No commits to push. Run contrib_propose() first." }], isError: true, details: {} };
+    }
+
+    // ── Pre-flight: Check if remote branch was deleted (PR likely merged) ──
+    const remote = remoteBranchExists(ctx.cwd);
+    if (!remote.exists) {
+      const pr = await checkBranchPRState(ctx.cwd);
+      if (pr?.state === "merged") {
+        return {
+          content: [{
+            type: "text",
+            text: [
+              `⛔ Cannot submit: PR for "${branch}" was already merged.`,
+              ``,
+              `   Merged PR: ${pr.url}`,
+              ``,
+              `The remote branch was deleted after merge. Continuing on this`,
+              `local branch creates orphaned work that is hard to track.`,
+              ``,
+              `Instead:`,
+              `   1. Switch to the base branch: git checkout main`,
+              `   2. Start fresh work: contrib_start_work(issue_id)`,
+            ].join("\n"),
+          }],
+          isError: true,
+          details: { branch, prState: pr.state, prUrl: pr.url },
+        };
+      }
+      // Remote deleted but PR state unknown — warn but allow
+      ctx.ui.notify(
+        "Remote branch deleted",
+        `Remote branch "${branch}" no longer exists. It may have been merged. Proceeding anyway...`,
+      );
     }
 
     // Check PR body for content that breaks CI shell scripts

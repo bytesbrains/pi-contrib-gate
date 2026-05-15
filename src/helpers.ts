@@ -106,6 +106,81 @@ export function shellEscape(value: string): string {
 }
 
 /**
+ * Check if the remote branch still exists (not deleted after PR merge).
+ */
+export function remoteBranchExists(
+  cwd: string,
+  branch?: string,
+): { exists: boolean; remoteName: string } {
+  const br = branch || currentBranch(cwd);
+  if (!br) return { exists: false, remoteName: "" };
+
+  for (const remote of ["origin", "gitea"]) {
+    const check = exec(`git ls-remote --heads ${remote} ${br}`, cwd);
+    if (check.ok && check.stdout.length > 0) {
+      return { exists: true, remoteName: remote };
+    }
+  }
+  return { exists: false, remoteName: "origin" };
+}
+
+/**
+ * Check PR state for the current branch. Uses gh CLI (GitHub) or Gitea API.
+ */
+export async function checkBranchPRState(
+  cwd: string,
+  branch?: string,
+): Promise<{ state: "open" | "merged" | "closed"; url: string } | null> {
+  const br = branch || currentBranch(cwd);
+  if (!br) return null;
+
+  // Try gh CLI first (GitHub)
+  const ghCheck = exec(
+    `gh pr list --head ${shellEscape(br)} --state all --json state,url --jq '.[0]'`,
+    cwd,
+  );
+  if (ghCheck.ok && ghCheck.stdout && ghCheck.stdout !== "null") {
+    try {
+      const data = JSON.parse(ghCheck.stdout);
+      const state = data.state as string;
+      return {
+        state: state === "MERGED" ? "merged" : state === "OPEN" ? "open" : "closed",
+        url: data.url || "",
+      };
+    } catch { /* fall through */ }
+  }
+
+  // Try Gitea API
+  const remote = exec("git remote get-url origin 2>/dev/null || git remote get-url gitea 2>/dev/null", cwd);
+  if (!remote.ok) return null;
+  const url = remote.stdout;
+
+  if (url.includes("gitea") || url.includes("127.0.0.1:3001")) {
+    const match = url.match(/[/:]([^/]+)\/([^/]+?)(?:\.git)?$/);
+    if (!match) return null;
+    const apiUrl = `http://127.0.0.1:3001/api/v1/repos/${match[1]}/${match[2]}`;
+    const credMatch = url.match(/:\/\/([^:]+):([^@]+)@/);
+    const token = credMatch ? credMatch[2] : "";
+
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `token ${token}`;
+      const res = await fetch(`${apiUrl}/pulls?head=${encodeURIComponent(br)}&state=all&limit=1`, { headers });
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        const pr = data[0];
+        return {
+          state: pr.merged ? "merged" : pr.state === "open" ? "open" : "closed",
+          url: pr.html_url || `${apiUrl}/pulls/${pr.number}`,
+        };
+      }
+    } catch { /* ignore */ }
+  }
+
+  return null;
+}
+
+/**
  * Escape a string for safe interpolation into a double-quoted shell context.
  * Escapes: $, `, \, ", !, newlines
  */

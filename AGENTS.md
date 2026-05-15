@@ -10,9 +10,19 @@
 
 ## ⚡ Issue Linking Required
 
-> **Every piece of work MUST be linked to a Gitea issue.** The gate will block writes, commits,
-> and PR creation if no issue is linked. Call `contrib_start_work(issue_id)` as your **first step**
-> before making any changes.
+> **Every piece of work MUST be linked to a real Gitea issue.** The gate validates the issue exists,
+> is open, and shows its title so you can verify relevance before starting work.
+>
+> **❌ Blocked:**
+> - Random/fake issue numbers (issue #999 doesn't exist → blocked)
+> - Direct `git checkout -b feat/issue-42` bypassing contrib_start_work
+> - Starting work on a closed issue
+>
+> **⚠️ Warned:**
+> - Issue assigned to someone else
+>
+> **✅ Allowed:**
+> - Issue exists + is open → branch created, work can begin
 >
 > **Rework on an existing PR?** If you're already on a feature branch (e.g., `feat/some-custom-name`),
 > calling `contrib_start_work(issue_id="42")` will link the issue without creating a new branch —
@@ -48,6 +58,9 @@ contrib_status()                    ← verify everything looks good
 | Need to bypass a gate | Ask the human for confirmation — gates can be overridden |
 | Push blocked | Use `contrib_submit()` instead of `git push` |
 | Write/edit blocked: "No Gitea issue linked" | You forgot `contrib_start_work(issue_id)`. Call it first with a valid issue number. |
+| contrib_start_work blocked: "Issue #X does not exist" | Issue number is fake or wrong. Use `project_list_issues()` to find real issues. |
+| contrib_start_work blocked: "Issue #X is closed" | Pick an open issue or reopen it. Use `project_list_issues(state="open")`. |
+| contrib_start_work blocked: branch creation | You tried `git checkout -b feat/issue-42` directly. Use `contrib_start_work(issue_id)` instead. |
 | contrib_propose blocked: no issue | Run `contrib_start_work(issue_id)` to link an issue, then retry. |
 
 ## Conventional Commits

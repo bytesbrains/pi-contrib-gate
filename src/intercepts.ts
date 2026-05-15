@@ -53,6 +53,19 @@ export async function interceptToolCall(event: any, ctx: ExtensionContext) {
 
   const cmd = event.input.command;
 
+  // Block direct branch creation bypassing contrib_start_work
+  if (/\bgit\s+checkout\s+-b\s+/.test(cmd) || /\bgit\s+switch\s+-c\s+/.test(cmd)) {
+    const branchMatch = cmd.match(/(?:checkout\s+-b|switch\s+-c)\s+(\S+)/);
+    const branchName = branchMatch?.[1] || "";
+    const isIssueBranch = /^(feat|fix|chore)\/issue-\d+$/.test(branchName) || /^issue-\d+$/.test(branchName);
+    if (isIssueBranch) {
+      return {
+        block: true,
+        reason: `Cannot create issue branch directly. Use contrib_start_work(issue_id) instead.\n\nThis ensures the issue exists on Gitea and is in the correct state before work begins.\n\nBlocked: ${cmd}`,
+      };
+    }
+  }
+
   if (/\bgit\s+push\b/.test(cmd)) {
     const isProtected = /\b(main|master|dev|production)\b/.test(cmd);
     if (isProtected) {

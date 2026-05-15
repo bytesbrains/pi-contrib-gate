@@ -1,7 +1,7 @@
 # Contrib Gate for Pi
 
-[![npm version](https://img.shields.io/npm/v/pi-contrib-gate)](https://www.npmjs.com/package/pi-contrib-gate)
-[![license](https://img.shields.io/npm/l/pi-contrib-gate)](./LICENSE)
+[![npm version](https://img.shields.io/npm/v/@bytesbrains/pi-contrib-gate)](https://www.npmjs.com/package/@bytesbrains/pi-contrib-gate)
+[![license](https://img.shields.io/npm/l/@bytesbrains/pi-contrib-gate)](./LICENSE)
 
 > Contribution gateway for AI agents — enforce branch naming, conventional commits, pre-commit quality gates, and PR automation. **Agents don't call `git push` — they call `contrib_submit()`.**
 
@@ -10,7 +10,7 @@
 ## Install
 
 ```bash
-pi install npm:pi-contrib-gate
+pi install npm:@bytesbrains/pi-contrib-gate
 ```
 
 ## Tools

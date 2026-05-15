@@ -72,6 +72,7 @@ export function loadConfig(cwd: string): ContribConfig {
         maxFilesChanged: parseInt(result["quality.maxFilesChanged"] as string) || DEFAULT_CONFIG.quality.maxFilesChanged,
         maxLinesAdded: parseInt(result["quality.maxLinesAdded"] as string) || DEFAULT_CONFIG.quality.maxLinesAdded,
       },
+      requireIssueValidation: parseBool(result["requireIssueValidation"] as string, DEFAULT_CONFIG.requireIssueValidation),
     };
   } catch {
     return { ...DEFAULT_CONFIG };

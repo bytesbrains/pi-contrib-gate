@@ -25,6 +25,8 @@ export interface ContribConfig {
     maxFilesChanged: number;
     maxLinesAdded: number;
   };
+  /** Validate that the linked Gitea issue actually exists before starting work (default: true) */
+  requireIssueValidation: boolean;
 }
 
 export const BEST_PRACTICES_DEFAULTS: BestPracticesConfig = {
@@ -58,4 +60,5 @@ export const DEFAULT_CONFIG: ContribConfig = {
     maxFilesChanged: 20,
     maxLinesAdded: 500,
   },
+  requireIssueValidation: true,
 };

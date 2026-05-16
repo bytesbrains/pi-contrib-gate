@@ -71,6 +71,9 @@ export function loadConfig(cwd: string): ContribConfig {
         doctorAudit: result["quality.doctorAudit"] !== "false",
         maxFilesChanged: parseInt(result["quality.maxFilesChanged"] as string) || DEFAULT_CONFIG.quality.maxFilesChanged,
         maxLinesAdded: parseInt(result["quality.maxLinesAdded"] as string) || DEFAULT_CONFIG.quality.maxLinesAdded,
+        lensErrors: parseBool(result["quality.lensErrors"] as string, DEFAULT_CONFIG.quality.lensErrors),
+        maxLensErrors: parseInt(result["quality.maxLensErrors"] as string) || DEFAULT_CONFIG.quality.maxLensErrors,
+        secretScan: parseBool(result["quality.secretScan"] as string, DEFAULT_CONFIG.quality.secretScan),
       },
       requireIssueValidation: parseBool(result["requireIssueValidation"] as string, DEFAULT_CONFIG.requireIssueValidation),
     };

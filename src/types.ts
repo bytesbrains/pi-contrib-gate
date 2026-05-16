@@ -28,6 +28,8 @@ export interface ContribConfig {
 		lensErrors: boolean;
 		/** Max allowed LSP errors in staged files (default: 0) */
 		maxLensErrors: number;
+		/** Scan staged changes for secrets/credentials with gitleaks (default: true) */
+		secretScan: boolean;
 	};
 	/** Validate that the linked Gitea issue actually exists before starting work (default: true) */
 	requireIssueValidation: boolean;
@@ -65,6 +67,7 @@ export const DEFAULT_CONFIG: ContribConfig = {
 		maxLinesAdded: 500,
 		lensErrors: true,
 		maxLensErrors: 0,
+		secretScan: true,
 	},
 	requireIssueValidation: true,
 };

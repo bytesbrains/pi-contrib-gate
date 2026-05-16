@@ -48,6 +48,25 @@ export function runQualityGate(
 		);
 	}
 
+	
+	// ── Secret / credential scan with gitleaks ─────────────────
+	if (config.quality.secretScan) {
+		const leak = exec("gitleaks protect --staged --no-banner 2>&1", cwd);
+		if (!leak.ok) {
+			// gitleaks exit code 1 = leaks found
+			const leakSummary = leak.stdout
+				.split("\n")
+				.filter((l) => l.includes("Finding:") || l.includes("RuleID:") || l.includes("File:"))
+				.join("\n  ");
+			errors.push(
+				`Secrets/credentials detected in staged changes!\n  ${leakSummary}\n\n  Remove secrets from files before committing. If this is a false positive, add a .gitleaks.toml allowlist or use gitleaks:allow comment.`,
+			);
+		} else if (leak.stderr && !leak.stderr.includes("no leaks found")) {
+			// gitleaks might output to stderr even on success (warnings, etc.)
+			// Only flag as error if the exit code was non-zero, already handled above.
+		}
+	}
+
 	const diff = exec("git diff --cached --name-only", cwd);
 	if (diff.ok) {
 		const files = diff.stdout.split("\n").filter(Boolean);

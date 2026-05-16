@@ -90,6 +90,21 @@ export async function interceptToolCall(event: any, ctx: ExtensionContext) {
       };
     }
 
+    // Run secret scan on all direct commits (including main/dev)
+    if (config.quality.secretScan) {
+      const leak = exec("gitleaks protect --staged --no-banner 2>&1", ctx.cwd);
+      if (!leak.ok) {
+        const leakLines = leak.stdout
+          .split("\n")
+          .filter((l: string) => l.includes("Finding:") || l.includes("RuleID:") || l.includes("File:"))
+          .join("\n  ");
+        return {
+          block: true,
+          reason: `Secrets/credentials detected in staged changes!\n  ${leakLines}\n\n  Remove secrets before committing. Add a .gitleaks.toml allowlist or gitleaks:allow comment for false positives.`,
+        };
+      }
+    }
+
     if (config.commits.convention === "conventional") {
       const msgMatch = cmd.match(/-m\s+"([^"]+)"/);
       if (msgMatch) {

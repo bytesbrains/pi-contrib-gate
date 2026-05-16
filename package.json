@@ -1,6 +1,6 @@
 {
   "name": "@bytesbrains/pi-contrib-gate",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "Contribution gateway for AI agents — enforce branch naming, conventional commits, pre-commit quality gates, and PR automation.",
   "keywords": [
     "pi-package",

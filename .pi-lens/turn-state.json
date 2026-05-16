@@ -1,0 +1,28 @@
+{
+  "files": {
+    "src/validate.ts": {
+      "modifiedRanges": [
+        {
+          "start": 1,
+          "end": 116
+        }
+      ],
+      "importsChanged": true,
+      "lastEdit": "2026-05-15T23:25:42.754Z"
+    },
+    "src/types.ts": {
+      "modifiedRanges": [
+        {
+          "start": 1,
+          "end": 71
+        }
+      ],
+      "importsChanged": false,
+      "lastEdit": "2026-05-15T23:25:42.700Z"
+    }
+  },
+  "turnCycles": 0,
+  "maxCycles": 3,
+  "lastUpdated": "2026-05-15T23:25:42.754Z",
+  "sessionId": "lens-mp7i4nth-bbc0ccd6"
+}

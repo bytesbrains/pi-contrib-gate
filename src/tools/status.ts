@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { loadConfig } from "../config";
 import { exec, currentBranch, isClean, hasUnpushed, getLinkedIssueId, remoteBranchExists, checkBranchPRState } from "../helpers";
 
 export const statusTool = {
@@ -8,9 +9,10 @@ export const statusTool = {
   description: "Show current branch, commit status, uncommitted changes, and PR status.",
   parameters: Type.Object({}),
   async execute(_toolCallId: string, _params: any, _signal: any, _onUpdate: any, ctx: ExtensionContext) {
+    const config = loadConfig(ctx.cwd);
     const branch = currentBranch(ctx.cwd);
     const clean = isClean(ctx.cwd);
-    const unpushed = hasUnpushed(ctx.cwd);
+    const unpushed = hasUnpushed(ctx.cwd, config);
     const issueId = getLinkedIssueId(ctx.cwd);
     const lastHash = (globalThis as any).__contrib_lastHash || null;
 
@@ -28,7 +30,7 @@ export const statusTool = {
 
     // ── Remote branch health ──
     lines.push("");
-    const remote = remoteBranchExists(ctx.cwd);
+    const remote = remoteBranchExists(ctx.cwd, undefined, config);
     if (branch && !remote.exists) {
       lines.push(`   🌐 Remote branch: ❌ deleted (PR likely merged)`);
       lines.push(`      ⚠️  Do NOT continue work on this branch.`);
@@ -39,7 +41,7 @@ export const statusTool = {
 
     // ── PR state ──
     if (branch) {
-      const pr = await checkBranchPRState(ctx.cwd);
+      const pr = await checkBranchPRState(ctx.cwd, undefined, config);
       if (pr) {
         const prIcon = pr.state === "merged" ? "🔀" : pr.state === "open" ? "🟢" : "🔴";
         lines.push(`   📬 PR: ${prIcon} ${pr.state.toUpperCase()}`);

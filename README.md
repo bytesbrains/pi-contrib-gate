@@ -52,6 +52,12 @@ Every `contrib_propose()` runs:
 Create `.contribrc.yml` in your project root (created automatically on first use with defaults):
 
 ```yaml
+# Remote configuration (optional — auto-detects by default)
+remote.name: ""            # Explicit remote name (e.g., "gitea", "origin")
+remote.type: auto          # "gitea" | "github" | "auto" — skip platform detection
+remote.url: ""             # Override API base URL for custom/self-hosted Gitea
+remote.token: ""           # Gitea PAT for API calls (required for SSH remotes)
+
 branches.featPattern: feat/
 branches.fixPattern: fix/
 branches.chorePattern: chore/
@@ -63,6 +69,26 @@ quality.lint: true
 quality.typeCheck: true
 quality.doctorAudit: true
 ```
+
+### Remote Configuration
+
+When a repository has both `gitea` and `origin` (GitHub) remotes, agents can get confused about which platform to use. The `remote` section resolves this ambiguity.
+
+| Key | Default | Description |
+|---|---|---|
+| `remote.name` | `""` (auto) | Explicit remote name for push/pull. When unset, auto-detects from available remotes. |
+| `remote.type` | `"auto"` | Platform type. `"gitea"` skips GitHub API queries, `"github"` skips Gitea API queries, `"auto"` detects from remote URL. |
+| `remote.url` | `""` (default) | Base URL for Gitea API (e.g., `"https://gitea.mycompany.com"`). Only needed for custom/self-hosted instances. |
+| `remote.token` | `""` | Gitea personal access token. **Required when using SSH remotes** (`git@gitea:...`) since SSH URLs don't contain credentials. HTTP remotes with embedded PATs take priority over this value. |
+
+**SSH Remote Setup Example:**
+```yaml
+remote.name: gitea
+remote.type: gitea
+remote.token: your-gitea-pat-here
+```
+
+> ⚠️ **Security:** The token is never included in logs, error messages, or debug output.
 
 ## Example Workflow
 

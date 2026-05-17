@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { loadConfig } from "../config";
 import { exec, currentBranch, hasUnpushed, createPR, shellEscape, getLinkedIssueId, remoteBranchExists, checkBranchPRState } from "../helpers";
 
 export const submitTool = {
@@ -13,6 +14,7 @@ export const submitTool = {
     remote: Type.Optional(Type.String({ description: "Git remote name (auto-detects)" })),
   }),
   async execute(_toolCallId: string, params: any, _signal: any, _onUpdate: any, ctx: ExtensionContext) {
+    const config = loadConfig(ctx.cwd);
     const branch = currentBranch(ctx.cwd);
     const base = params.base || "dev";
 
@@ -35,14 +37,14 @@ export const submitTool = {
       };
     }
 
-    if (!hasUnpushed(ctx.cwd) && !(globalThis as any).__contrib_lastHash) {
+    if (!hasUnpushed(ctx.cwd, config) && !(globalThis as any).__contrib_lastHash) {
       return { content: [{ type: "text", text: "No commits to push. Run contrib_propose() first." }], isError: true, details: {} };
     }
 
     // ── Pre-flight: Check if remote branch was deleted (PR likely merged) ──
-    const remote = remoteBranchExists(ctx.cwd);
+    const remote = remoteBranchExists(ctx.cwd, undefined, config);
     if (!remote.exists) {
-      const pr = await checkBranchPRState(ctx.cwd);
+      const pr = await checkBranchPRState(ctx.cwd, undefined, config);
       if (pr?.state === "merged") {
         return {
           content: [{
@@ -99,7 +101,7 @@ export const submitTool = {
       };
     }
 
-    let remoteName = params.remote || "";
+    let remoteName = params.remote || config.remote.name || "";
     if (!remoteName) {
       const remotes = exec("git remote", ctx.cwd);
       const remoteList = remotes.ok ? remotes.stdout.split("\n").filter(Boolean) : [];
@@ -114,7 +116,7 @@ export const submitTool = {
     let prBody = params.body || "";
     if (issueId) prBody += `\n\nCloses #${issueId}`;
 
-    const pr = await createPR(branch, base, params.title, prBody, ctx, remoteName);
+    const pr = await createPR(branch, base, params.title, prBody, ctx, remoteName, config);
     if (!pr.ok) return { content: [{ type: "text", text: `Push succeeded but PR creation failed: ${pr.error}` }], isError: true, details: { branch } };
 
     return {

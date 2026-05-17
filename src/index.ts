@@ -59,9 +59,9 @@ export default function (pi: ExtensionAPI) {
     const branch = currentBranch(ctx.cwd);
     const isFeatureBranch = /^(feat|fix|chore)\//.test(branch);
     if (isFeatureBranch) {
-      const remote = remoteBranchExists(ctx.cwd);
+      const remote = remoteBranchExists(ctx.cwd, undefined, config);
       if (!remote.exists) {
-        const pr = await checkBranchPRState(ctx.cwd);
+        const pr = await checkBranchPRState(ctx.cwd, undefined, config);
         const prNote = pr
           ? `\nPR ${pr.url} was ${pr.state}.`
           : "";

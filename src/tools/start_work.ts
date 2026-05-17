@@ -24,7 +24,7 @@ export const startWorkTool = {
 
     // ── Validate issue exists on Gitea ──
     if (config.requireIssueValidation) {
-      const opts = resolveGitea(ctx.cwd);
+      const opts = resolveGitea(ctx.cwd, config);
       if (!opts.repo) {
         return {
           content: [{
@@ -103,9 +103,9 @@ export const startWorkTool = {
 
       // ═══ Case 1: Already on a feature branch ═══
       if (isFeatureBranch) {
-        const remote = remoteBranchExists(ctx.cwd);
+        const remote = remoteBranchExists(ctx.cwd, undefined, config);
         if (!remote.exists) {
-          const pr = await checkBranchPRState(ctx.cwd);
+          const pr = await checkBranchPRState(ctx.cwd, undefined, config);
           const prNote = pr
             ? `\n\nPR ${pr.url} was ${pr.state === "merged" ? "already merged" : "closed"}.`
             : "";
@@ -149,7 +149,12 @@ export const startWorkTool = {
         return { content: [{ type: "text", text: "⚠️ Working tree is not clean. Commit or stash changes before starting new work." }], isError: true, details: { clean: false } };
       }
 
-      exec("git pull --ff-only gitea dev 2>/dev/null || git pull --ff-only origin dev 2>/dev/null || true", ctx.cwd);
+      const pullRemote = config.remote.name || "";
+      if (pullRemote) {
+        exec(`git pull --ff-only ${shellEscape(pullRemote)} dev 2>/dev/null || true`, ctx.cwd);
+      } else {
+        exec("git pull --ff-only gitea dev 2>/dev/null || git pull --ff-only origin dev 2>/dev/null || true", ctx.cwd);
+      }
 
       const branchName = `${branchType}/issue-${issueId}`;
       const r2 = exec(`git checkout -b ${shellEscape(branchName)}`, ctx.cwd);
@@ -180,9 +185,9 @@ export const startWorkTool = {
     // ── Validation disabled — original flow ──
 
     if (isFeatureBranch) {
-      const remote = remoteBranchExists(ctx.cwd);
+      const remote = remoteBranchExists(ctx.cwd, undefined, config);
       if (!remote.exists) {
-        const pr = await checkBranchPRState(ctx.cwd);
+        const pr = await checkBranchPRState(ctx.cwd, undefined, config);
         const prNote = pr
           ? `\n\nPR ${pr.url} was ${pr.state === "merged" ? "already merged" : "closed"}.`
           : "";
@@ -223,7 +228,12 @@ export const startWorkTool = {
       return { content: [{ type: "text", text: "⚠️ Working tree is not clean. Commit or stash changes before starting new work." }], isError: true, details: { clean: false } };
     }
 
-    exec("git pull --ff-only gitea dev 2>/dev/null || git pull --ff-only origin dev 2>/dev/null || true", ctx.cwd);
+    const pullRemote2 = config.remote.name || "";
+    if (pullRemote2) {
+      exec(`git pull --ff-only ${shellEscape(pullRemote2)} dev 2>/dev/null || true`, ctx.cwd);
+    } else {
+      exec("git pull --ff-only gitea dev 2>/dev/null || git pull --ff-only origin dev 2>/dev/null || true", ctx.cwd);
+    }
 
     const branchName = `${branchType}/issue-${issueId}`;
     const r2 = exec(`git checkout -b ${shellEscape(branchName)}`, ctx.cwd);

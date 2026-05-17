@@ -1,3 +1,14 @@
+export interface RemoteConfig {
+	/** Explicit remote name (e.g., "gitea", "origin"). Omit to auto-detect. */
+	name: string;
+	/** Platform type: "gitea" / "github" / "auto" (auto-detect from remote URL) */
+	type: "gitea" | "github" | "auto";
+	/** Override API base URL for custom/self-hosted Gitea instance */
+	url: string;
+	/** Gitea PAT for API calls (required when using SSH remotes). ⚠️ NEVER logged. */
+	token: string;
+}
+
 export interface BestPracticesConfig {
 	shortFrequentCommits: boolean;
 	maxLinesPerCommit: number;
@@ -7,6 +18,7 @@ export interface BestPracticesConfig {
 }
 
 export interface ContribConfig {
+	remote: RemoteConfig;
 	branches: {
 		featPattern: string;
 		fixPattern: string;
@@ -47,7 +59,15 @@ export const BEST_PRACTICES_DEFAULTS: BestPracticesConfig = {
 	],
 };
 
+export const REMOTE_DEFAULTS: RemoteConfig = {
+	name: "",
+	type: "auto",
+	url: "",
+	token: "",
+};
+
 export const DEFAULT_CONFIG: ContribConfig = {
+	remote: { ...REMOTE_DEFAULTS },
 	branches: {
 		featPattern: "feat/",
 		fixPattern: "fix/",

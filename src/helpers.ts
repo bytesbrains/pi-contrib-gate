@@ -1,5 +1,6 @@
 import * as cp from "node:child_process";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ContribConfig } from "./types";
 
 // ⚠️ SYNC-MARKER: exec(), resolveGitea(), giteaApi() are duplicated across packages.
 // If changing behavior here, update all copies in: ci-gate, contrib-gate, review-gate, project-gate
@@ -81,8 +82,13 @@ export function scanForConflictMarkers(cwd: string): string[] {
   return conflicts;
 }
 
-export function hasUnpushed(cwd: string): boolean {
+export function hasUnpushed(cwd: string, config?: ContribConfig): boolean {
   const branch = currentBranch(cwd);
+  const remote = config?.remote.name;
+  if (remote) {
+    const r = exec(`git log ${remote}/${branch}..HEAD --oneline 2>/dev/null || echo ""`, cwd);
+    return r.ok && r.stdout.length > 0;
+  }
   const r = exec(`git log origin/${branch}..HEAD --oneline 2>/dev/null || git log gitea/${branch}..HEAD --oneline 2>/dev/null || echo ""`, cwd);
   return r.ok && r.stdout.length > 0;
 }
@@ -113,17 +119,22 @@ export function shellEscape(value: string): string {
 export function remoteBranchExists(
   cwd: string,
   branch?: string,
+  config?: ContribConfig,
 ): { exists: boolean; remoteName: string } {
   const br = branch || currentBranch(cwd);
   if (!br) return { exists: false, remoteName: "" };
 
-  for (const remote of ["origin", "gitea"]) {
+  // Use configured remote name if set, otherwise try both in order
+  const preferred = config?.remote.name;
+  const remotes = preferred ? [preferred] : ["origin", "gitea"];
+
+  for (const remote of remotes) {
     const check = exec(`git ls-remote --heads ${remote} ${br}`, cwd);
     if (check.ok && check.stdout.length > 0) {
       return { exists: true, remoteName: remote };
     }
   }
-  return { exists: false, remoteName: "origin" };
+  return { exists: false, remoteName: remotes[0] };
 }
 
 /**
@@ -132,48 +143,47 @@ export function remoteBranchExists(
 export async function checkBranchPRState(
   cwd: string,
   branch?: string,
+  config?: ContribConfig,
 ): Promise<{ state: "open" | "merged" | "closed"; url: string } | null> {
   const br = branch || currentBranch(cwd);
   if (!br) return null;
 
-  // Try gh CLI first (GitHub)
-  const ghCheck = exec(
-    `gh pr list --head ${shellEscape(br)} --state all --json state,url --jq '.[0]'`,
-    cwd,
-  );
-  if (ghCheck.ok && ghCheck.stdout && ghCheck.stdout !== "null") {
-    try {
-      const data = JSON.parse(ghCheck.stdout);
-      const state = data.state as string;
-      return {
-        state: state === "MERGED" ? "merged" : state === "OPEN" ? "open" : "closed",
-        url: data.url || "",
-      };
-    } catch { /* fall through */ }
+  const remoteType = config?.remote.type || "auto";
+
+  // Try gh CLI first (GitHub) — skip if configured as gitea-only
+  if (remoteType !== "gitea") {
+    const ghCheck = exec(
+      `gh pr list --head ${shellEscape(br)} --state all --json state,url --jq '.[0]'`,
+      cwd,
+    );
+    if (ghCheck.ok && ghCheck.stdout && ghCheck.stdout !== "null") {
+      try {
+        const data = JSON.parse(ghCheck.stdout);
+        const state = data.state as string;
+        return {
+          state: state === "MERGED" ? "merged" : state === "OPEN" ? "open" : "closed",
+          url: data.url || "",
+        };
+      } catch { /* fall through */ }
+    }
   }
 
-  // Try Gitea API
-  const remote = exec("git remote get-url origin 2>/dev/null || git remote get-url gitea 2>/dev/null", cwd);
-  if (!remote.ok) return null;
-  const url = remote.stdout;
-
-  if (url.includes("gitea") || url.includes("127.0.0.1:3001")) {
-    const match = url.match(/[/:]([^/]+)\/([^/]+?)(?:\.git)?$/);
-    if (!match) return null;
-    const apiUrl = `http://127.0.0.1:3001/api/v1/repos/${match[1]}/${match[2]}`;
-    const credMatch = url.match(/:\/\/([^:]+):([^@]+)@/);
-    const token = credMatch ? credMatch[2] : "";
+  // Try Gitea API — skip if configured as github-only
+  if (remoteType !== "github") {
+    const opts = resolveGitea(cwd, config);
+    if (!opts.repo) return null;
 
     try {
+      const base = `${opts.apiUrl}/api/v1/repos/${opts.repo}`;
       const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `token ${token}`;
-      const res = await fetch(`${apiUrl}/pulls?head=${encodeURIComponent(br)}&state=all&limit=1`, { headers });
+      if (opts.token) headers["Authorization"] = `token ${opts.token}`;
+      const res = await fetch(`${base}/pulls?head=${encodeURIComponent(br)}&state=all&limit=1`, { headers });
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
         const pr = data[0];
         return {
           state: pr.merged ? "merged" : pr.state === "open" ? "open" : "closed",
-          url: pr.html_url || `${apiUrl}/pulls/${pr.number}`,
+          url: pr.html_url || `${base}/pulls/${pr.number}`,
         };
       }
     } catch { /* ignore */ }
@@ -232,21 +242,52 @@ export async function createPR(
   body: string,
   ctx: ExtensionContext,
   remoteName: string,
+  config?: ContribConfig,
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   const remote = exec(`git remote get-url ${remoteName || "origin"}`, ctx.cwd);
   if (!remote.ok) return { ok: false, error: "No git remote found" };
 
   const url = remote.stdout;
-  let apiUrl = "";
-  let token = "";
+  const remoteType = config?.remote.type || "auto";
 
-  if (url.includes("gitea") || url.includes("127.0.0.1:3001")) {
+  // Detect platform from URL or config
+  const isGitea = remoteType === "gitea" || (remoteType === "auto" && (url.includes("gitea") || url.includes("127.0.0.1:3001")));
+  const isGithub = remoteType === "github" || (remoteType === "auto" && url.includes("github.com"));
+
+  if (isGitea) {
     const match = url.match(/[/:]([^/]+)\/([^/]+?)(?:\.git)?$/);
     if (!match) return { ok: false, error: `Cannot parse Gitea repo from: ${url}` };
-    apiUrl = `http://127.0.0.1:3001/api/v1/repos/${match[1]}/${match[2]}`;
+
+    const baseUrl = config?.remote.url || "http://127.0.0.1:3001";
+    const apiUrl = `${baseUrl}/api/v1/repos/${match[1]}/${match[2]}`;
+
+    // Token priority: URL-embedded > config > empty
     const credMatch = url.match(/:\/\/([^:]+):([^@]+)@/);
-    token = credMatch ? credMatch[2] : "";
-  } else if (url.includes("github.com")) {
+    const token = credMatch ? credMatch[2] : (config?.remote.token || "");
+
+    const fetchHeaders: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) fetchHeaders["Authorization"] = `token ${token}`;
+
+    try {
+      const res = await fetch(`${apiUrl}/pulls`, {
+        method: "POST",
+        headers: fetchHeaders,
+        body: JSON.stringify({ title, head: branch, base, body }),
+      });
+      const text = await res.text();
+      if (!res.ok) return { ok: false, error: text || `HTTP ${res.status}` };
+      try {
+        const data = JSON.parse(text);
+        return { ok: true, url: data.html_url || `${apiUrl}/pulls/${data.number}` };
+      } catch {
+        return { ok: true, url: text };
+      }
+    } catch (e: any) {
+      return { ok: false, error: e.message || "Network error" };
+    }
+  }
+
+  if (isGithub) {
     // gh CLI handles its own argument quoting — only escape double-quotes and strip newlines
     const safeTitle = title.replace(/"/g, '\\"').replace(/\n/g, " ");
     const safeBody = body.replace(/"/g, '\\"').replace(/\n/g, " ");
@@ -259,55 +300,50 @@ export async function createPR(
     return { ok: false, error: r.stderr || "gh pr create failed" };
   }
 
-  if (!apiUrl) return { ok: false, error: "Unsupported remote. Use Gitea or GitHub." };
-
-  // Use fetch() instead of shell-executed curl — avoids token exposure in process lists
-  const fetchHeaders: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) fetchHeaders["Authorization"] = `token ${token}`;
-
-  try {
-    const res = await fetch(`${apiUrl}/pulls`, {
-      method: "POST",
-      headers: fetchHeaders,
-      body: JSON.stringify({ title, head: branch, base, body }),
-    });
-    const text = await res.text();
-    if (!res.ok) return { ok: false, error: text || `HTTP ${res.status}` };
-    try {
-      const data = JSON.parse(text);
-      return { ok: true, url: data.html_url || `${apiUrl}/pulls/${data.number}` };
-    } catch {
-      return { ok: true, url: text };
-    }
-  } catch (e: any) {
-    return { ok: false, error: e.message || "Network error" };
-  }
+  return { ok: false, error: "Unsupported remote. Use Gitea or GitHub." };
 }
 
 // ── Gitea API Helpers ──────────────────────────────────────────────────────────
 
 /**
- * Resolve Gitea repo path and token from git remote.
+ * Resolve Gitea repo path, token, and API base URL from git remote + config.
+ * Uses configured remote name, token, and URL when available.
+ * Token priority: URL-embedded > config.remote.token.
  */
-export function resolveGitea(cwd: string): { repo: string; token: string } {
-  const remote = exec("git remote get-url gitea 2>/dev/null || git remote get-url origin", cwd);
+export function resolveGitea(cwd: string, config?: ContribConfig): { repo: string; token: string; apiUrl: string } {
+  const remoteName = config?.remote.name;
+  let remoteCmd: string;
+  if (remoteName) {
+    remoteCmd = `git remote get-url ${remoteName} 2>/dev/null`;
+  } else {
+    remoteCmd = "git remote get-url gitea 2>/dev/null || git remote get-url origin";
+  }
+  const remote = exec(remoteCmd, cwd);
   const url = remote.stdout || "";
   const match = url.match(/[/:]([^/]+)\/([^/]+?)(?:\.git)?$/);
   const repo = match ? `${match[1]}/${match[2]}` : "";
+
+  // Token: URL-embedded PAT takes priority, config token as fallback (for SSH remotes)
   const credMatch = url.match(/:\/\/([^:]+):([^@]+)@/);
-  return { repo, token: credMatch ? credMatch[2] : "" };
+  const token = credMatch ? credMatch[2] : (config?.remote.token || "");
+
+  // API base URL: config.remote.url takes priority, otherwise default
+  const apiUrl = config?.remote.url || "http://127.0.0.1:3001";
+
+  return { repo, token, apiUrl };
 }
 
 /**
- * Call Gitea API.
+ * Call Gitea API. Uses apiUrl from opts (set by resolveGitea) for self-hosted instances.
+ * ⚠️ Token is NEVER logged or included in error messages.
  */
 export async function giteaApi(
   path: string,
   method: string,
   body: Record<string, unknown> | null,
-  opts: { repo: string; token: string },
+  opts: { repo: string; token: string; apiUrl?: string },
 ): Promise<{ ok: boolean; data: unknown; error?: string; statusCode?: number }> {
-  const base = `http://127.0.0.1:3001/api/v1/repos/${opts.repo}`;
+  const base = `${opts.apiUrl || "http://127.0.0.1:3001"}/api/v1/repos/${opts.repo}`;
   const url = `${base}${path}`;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (opts.token) headers["Authorization"] = `token ${opts.token}`;
@@ -321,7 +357,8 @@ export async function giteaApi(
     const text = await res.text();
     const statusCode = res.status;
     if (!res.ok) {
-      return { ok: false, data: null, statusCode, error: text || `HTTP ${statusCode}` };
+      // Security: NEVER include token in error messages
+      return { ok: false, data: null, statusCode, error: `Gitea API error: HTTP ${statusCode} ${method} ${path}` };
     }
     try {
       return { ok: true, data: JSON.parse(text), statusCode };
@@ -329,6 +366,6 @@ export async function giteaApi(
       return { ok: true, data: text, statusCode };
     }
   } catch (e: any) {
-    return { ok: false, data: null, error: e.message || "Network error" };
+    return { ok: false, data: null, error: `Gitea API network error: ${e.message || "unknown"}` };
   }
 }

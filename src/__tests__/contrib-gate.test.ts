@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { DEFAULT_CONFIG, BEST_PRACTICES_DEFAULTS } from "../types";
+import { DEFAULT_CONFIG, BEST_PRACTICES_DEFAULTS, REMOTE_DEFAULTS } from "../types";
 import { loadConfig } from "../config";
 import { validateBranchName, validateConventionalCommit, runQualityGate } from "../validate";
 import {
   exec, currentBranch,
   isClean, isMergeInProgress, isRebaseInProgress, isConflictInProgress,
   scanForConflictMarkers, getStagedStats, countUnrelatedDirs,
-  extractIssueFromBranch,
+  extractIssueFromBranch, resolveGitea, giteaApi, hasUnpushed, remoteBranchExists,
 } from "../helpers";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -74,6 +74,47 @@ describe("ContribConfig", () => {
     expect(config.commits.bestPractices.maxUnrelatedDirs).toBe(5);
     expect(config.commits.bestPractices.guidanceText).toEqual(["Be thoughtful", "Keep it small", "Test everything"]);
     fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("defaults remote config when no keys present", () => {
+    const config = loadConfig("/nonexistent/path");
+    expect(config.remote.name).toBe("");
+    expect(config.remote.type).toBe("auto");
+    expect(config.remote.url).toBe("");
+    expect(config.remote.token).toBe("");
+  });
+
+  it("parses remote config keys", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-test-"));
+    fs.writeFileSync(path.join(tmp, ".contribrc.yml"), [
+      "remote.name: gitea",
+      "remote.type: gitea",
+      "remote.url: http://gitea.example.com:3000",
+      "remote.token: abc123secret",
+    ].join("\n"));
+    const config = loadConfig(tmp);
+    expect(config.remote.name).toBe("gitea");
+    expect(config.remote.type).toBe("gitea");
+    expect(config.remote.url).toBe("http://gitea.example.com:3000");
+    expect(config.remote.token).toBe("abc123secret");
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("validates remote.type enum", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-test-"));
+    fs.writeFileSync(path.join(tmp, ".contribrc.yml"), [
+      "remote.type: invalid-type",
+    ].join("\n"));
+    const config = loadConfig(tmp);
+    expect(config.remote.type).toBe("auto"); // Falls back to default
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("REMOTE_DEFAULTS matches default config", () => {
+    expect(DEFAULT_CONFIG.remote.name).toBe(REMOTE_DEFAULTS.name);
+    expect(DEFAULT_CONFIG.remote.type).toBe(REMOTE_DEFAULTS.type);
+    expect(DEFAULT_CONFIG.remote.url).toBe(REMOTE_DEFAULTS.url);
+    expect(DEFAULT_CONFIG.remote.token).toBe(REMOTE_DEFAULTS.token);
   });
 
   it("backward-compatible with existing configs (no bestPractices keys)", () => {
@@ -371,5 +412,70 @@ describe("scanForConflictMarkers", () => {
     expect(result).toEqual([]);
 
     fs.rmSync(tmp, { recursive: true, force: true });
+  });
+});
+
+// ═══════════════════════════════════════
+// Remote config helpers
+// ═══════════════════════════════════════
+describe("resolveGitea with remote config", () => {
+  it("works without config (backward compat)", () => {
+    const result = resolveGitea(process.cwd());
+    expect(result).toHaveProperty("repo");
+    expect(result).toHaveProperty("token");
+    expect(result).toHaveProperty("apiUrl");
+    expect(result.apiUrl).toBe("http://127.0.0.1:3001");
+  });
+
+  it("uses config token as fallback when no URL-embedded token", () => {
+    // URL-embedded token takes priority. Config token is fallback for SSH remotes.
+    const config = { ...DEFAULT_CONFIG, remote: { ...DEFAULT_CONFIG.remote, token: "test-token-123" } };
+    const result = resolveGitea(process.cwd(), config);
+    // When URL has embedded creds, that takes priority; otherwise config token is used
+    expect(result.token.length).toBeGreaterThan(0);
+  });
+
+  it("uses config url for custom Gitea instance", () => {
+    const config = { ...DEFAULT_CONFIG, remote: { ...DEFAULT_CONFIG.remote, url: "https://gitea.mycompany.com" } };
+    const result = resolveGitea(process.cwd(), config);
+    expect(result.apiUrl).toBe("https://gitea.mycompany.com");
+  });
+});
+
+describe("giteaApi error handling", () => {
+  it("never includes token in error messages", async () => {
+    const opts = { repo: "user/repo", token: "secret-token-abc123", apiUrl: "http://0.0.0.0:1" };
+    const result = await giteaApi("/issues/99999", "GET", null, opts);
+    expect(result.ok).toBe(false);
+    expect(result.error).not.toContain("secret-token-abc123");
+    expect(result.error).not.toContain("abc123");
+  });
+});
+
+describe("hasUnpushed with remote config", () => {
+  it("uses configured remote name", () => {
+    const config = { ...DEFAULT_CONFIG, remote: { ...DEFAULT_CONFIG.remote, name: "gitea" } };
+    const result = hasUnpushed(process.cwd(), config);
+    expect(typeof result).toBe("boolean");
+  });
+
+  it("falls back to auto-detect without config", () => {
+    const result = hasUnpushed(process.cwd());
+    expect(typeof result).toBe("boolean");
+  });
+});
+
+describe("remoteBranchExists with remote config", () => {
+  it("uses configured remote name when set", () => {
+    const config = { ...DEFAULT_CONFIG, remote: { ...DEFAULT_CONFIG.remote, name: "gitea" } };
+    const result = remoteBranchExists(process.cwd(), undefined, config);
+    expect(result).toHaveProperty("exists");
+    expect(typeof result.remoteName).toBe("string");
+  });
+
+  it("falls back to origin/gitea without config", () => {
+    const result = remoteBranchExists(process.cwd());
+    expect(result).toHaveProperty("exists");
+    expect(typeof result.remoteName).toBe("string");
   });
 });

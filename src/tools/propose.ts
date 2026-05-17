@@ -38,7 +38,7 @@ export const proposeTool = {
 
     // Validate issue exists when ID was derived from branch name (not session state)
     if (config.requireIssueValidation && !(globalThis as any).__contrib_issueId) {
-      const opts = resolveGitea(ctx.cwd);
+      const opts = resolveGitea(ctx.cwd, config);
       if (opts.repo) {
         const issueR = await giteaApi(`/issues/${issueId}`, "GET", null, opts);
         if (!issueR.ok) {

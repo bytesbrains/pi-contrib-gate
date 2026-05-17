@@ -101,19 +101,19 @@ export function runQualityGate(
 				.split("\n")
 				.filter((f) => /\.(ts|tsx)$/.test(f));
 			if (tsFiles.length > 0) {
+				// Run tsc ONCE to avoid O(n) invocations
+				const tscOut = exec("npx tsc --noEmit --pretty false 2>&1 || true", cwd);
+				const tscOutput = tscOut.ok ? tscOut.stdout : "";
 				let totalErrors = 0;
 				const errorFiles: string[] = [];
 				for (const file of tsFiles) {
-					const tscCheck = exec(
-						`npx tsc --noEmit --pretty false 2>&1 || true`,
-						cwd,
-					);
-					if (tscCheck.ok && tscCheck.stdout.includes(file)) {
-						const matches = tscCheck.stdout.match(new RegExp(file, "g"));
+					if (tscOutput.includes(file)) {
+						const escaped = file.replace(/[.*+?${}()|[\]\\]/g, '\\$&');
+						const matches = tscOutput.match(new RegExp(escaped, "g"));
 						const fileErrors = matches ? matches.length : 0;
 						if (fileErrors > 0) {
 							totalErrors += fileErrors;
-							errorFiles.push(`${file} (${fileErrors} errors)`);
+							errorFiles.push(file + " (" + fileErrors + " errors)");
 						}
 					}
 				}

@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "../config";
-import { exec, currentBranch, getStagedStats, countUnrelatedDirs, shellEscape, getLinkedIssueId } from "../helpers";
+import { exec, currentBranch, getStagedStats, countUnrelatedDirs, shellEscape, getLinkedIssueId, resolveGitea, giteaApi } from "../helpers";
 import { validateBranchName, validateConventionalCommit, runQualityGate } from "../validate";
 
 export const proposeTool = {
@@ -34,6 +34,45 @@ export const proposeTool = {
         isError: true,
         details: {},
       };
+    }
+
+    // Validate issue exists when ID was derived from branch name (not session state)
+    if (config.requireIssueValidation && !(globalThis as any).__contrib_issueId) {
+      const opts = resolveGitea(ctx.cwd);
+      if (opts.repo) {
+        const issueR = await giteaApi(`/issues/${issueId}`, "GET", null, opts);
+        if (!issueR.ok) {
+          return {
+            content: [{
+              type: "text",
+              text: [
+                `⚠️  Issue #${issueId} could not be verified on Gitea.`,
+                ``,
+                `The issue ID was extracted from your branch name but may not exist.`,
+                `Run contrib_start_work(issue_id=${issueId}) to validate and link the issue.`,
+              ].join("\n"),
+            }],
+            isError: true,
+            details: { issueId },
+          };
+        }
+        const issue = issueR.data as Record<string, unknown>;
+        if (issue.state !== "open") {
+          return {
+            content: [{
+              type: "text",
+              text: [
+                `⚠️  Issue #${issueId} is ${issue.state}: "${(issue as any).title || '?'}".`,
+                ``,
+                `This issue cannot have new work committed against it.`,
+                `Run contrib_start_work() with an open issue.`,
+              ].join("\n"),
+            }],
+            isError: true,
+            details: { issueId, state: issue.state },
+          };
+        }
+      }
     }
 
     const branchCheck = validateBranchName(branch);

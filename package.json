@@ -14,7 +14,7 @@
   "author": "nandal <nandal@users.noreply.github.com>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nandal/pi-ext",
+    "url": "git+https://github.com/nandal/pi-ext.git",
     "directory": "contrib-gate"
   },
   "homepage": "https://github.com/nandal/pi-ext/tree/main/contrib-gate",

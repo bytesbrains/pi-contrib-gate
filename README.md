@@ -15,12 +15,12 @@ pi install npm:@bytesbrains/pi-contrib-gate
 
 ## Tools
 
-| Tool | What it does |
-|---|---|
-| `contrib_start_work(issue_id)` | Create properly named branch, link to issue |
-| `contrib_propose(message, files)` | Validate, stage, quality-check, commit |
-| `contrib_submit(title, body)` | Push, create PR, return URL |
-| `contrib_status()` | Show branch, commits, changes, PR status |
+| Tool                              | What it does                                |
+| --------------------------------- | ------------------------------------------- |
+| `contrib_start_work(issue_id)`    | Create properly named branch, link to issue |
+| `contrib_propose(message, files)` | Validate, stage, quality-check, commit      |
+| `contrib_submit(title, body)`     | Push, create PR, return URL                 |
+| `contrib_status()`                | Show branch, commits, changes, PR status    |
 
 ## Safety Intercepts
 
@@ -38,14 +38,14 @@ The gate **passively monitors** all `bash` tool calls and:
 
 Every `contrib_propose()` runs:
 
-| Check | Default | Config |
-|---|---|---|
-| Conventional commit format | ✅ | `commits.convention` |
-| Max files changed (20) | ✅ | `quality.maxFilesChanged` |
-| Max lines added (500) | ✅ | `quality.maxLinesAdded` |
-| TypeScript check (`tsc --noEmit`) | ✅ | `quality.typeCheck` |
-| Lint check (`npm run lint`) | ✅ | `quality.lint` |
-| Doctor audit (god file detection) | ✅ | `quality.doctorAudit` |
+| Check                             | Default | Config                    |
+| --------------------------------- | ------- | ------------------------- |
+| Conventional commit format        | ✅      | `commits.convention`      |
+| Max files changed (20)            | ✅      | `quality.maxFilesChanged` |
+| Max lines added (500)             | ✅      | `quality.maxLinesAdded`   |
+| TypeScript check (`tsc --noEmit`) | ✅      | `quality.typeCheck`       |
+| Lint check (`npm run lint`)       | ✅      | `quality.lint`            |
+| Doctor audit (god file detection) | ✅      | `quality.doctorAudit`     |
 
 ## Configuration
 
@@ -53,10 +53,10 @@ Create `.contribrc.yml` in your project root (created automatically on first use
 
 ```yaml
 # Remote configuration (optional — auto-detects by default)
-remote.name: ""            # Explicit remote name (e.g., "gitea", "origin")
-remote.type: auto          # "gitea" | "github" | "auto" — skip platform detection
-remote.url: ""             # Override API base URL for custom/self-hosted Gitea
-remote.token: ""           # Gitea PAT for API calls (required for SSH remotes)
+remote.name: "" # Explicit remote name (e.g., "gitea", "origin")
+remote.type: auto # "gitea" | "github" | "auto" — skip platform detection
+remote.url: "" # Override API base URL for custom/self-hosted Gitea
+remote.token: "" # Gitea PAT for API calls (required for SSH remotes)
 
 branches.featPattern: feat/
 branches.fixPattern: fix/
@@ -74,14 +74,15 @@ quality.doctorAudit: true
 
 When a repository has both `gitea` and `origin` (GitHub) remotes, agents can get confused about which platform to use. The `remote` section resolves this ambiguity.
 
-| Key | Default | Description |
-|---|---|---|
-| `remote.name` | `""` (auto) | Explicit remote name for push/pull. When unset, auto-detects from available remotes. |
-| `remote.type` | `"auto"` | Platform type. `"gitea"` skips GitHub API queries, `"github"` skips Gitea API queries, `"auto"` detects from remote URL. |
-| `remote.url` | `""` (default) | Base URL for Gitea API (e.g., `"https://gitea.mycompany.com"`). Only needed for custom/self-hosted instances. |
-| `remote.token` | `""` | Gitea personal access token. **Required when using SSH remotes** (`git@gitea:...`) since SSH URLs don't contain credentials. HTTP remotes with embedded PATs take priority over this value. |
+| Key            | Default        | Description                                                                                                                                                                                 |
+| -------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `remote.name`  | `""` (auto)    | Explicit remote name for push/pull. When unset, auto-detects from available remotes.                                                                                                        |
+| `remote.type`  | `"auto"`       | Platform type. `"gitea"` skips GitHub API queries, `"github"` skips Gitea API queries, `"auto"` detects from remote URL.                                                                    |
+| `remote.url`   | `""` (default) | Base URL for Gitea API (e.g., `"https://gitea.mycompany.com"`). Only needed for custom/self-hosted instances.                                                                               |
+| `remote.token` | `""`           | Gitea personal access token. **Required when using SSH remotes** (`git@gitea:...`) since SSH URLs don't contain credentials. HTTP remotes with embedded PATs take priority over this value. |
 
 **SSH Remote Setup Example:**
+
 ```yaml
 remote.name: gitea
 remote.type: gitea

@@ -89,9 +89,7 @@ export function loadConfig(cwd: string): ContribConfig {
 		return {
 			remote: {
 				name: (result["remote.name"] as string) || REMOTE_DEFAULTS.name,
-				type: (remoteType === "gitea" ||
-				remoteType === "github" ||
-				remoteType === "auto"
+				type: (["gitea", "github", "auto"].includes(remoteType)
 					? remoteType
 					: REMOTE_DEFAULTS.type) as "gitea" | "github" | "auto",
 				url: (result["remote.url"] as string) || REMOTE_DEFAULTS.url,

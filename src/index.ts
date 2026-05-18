@@ -13,7 +13,12 @@ import { startWorkTool } from "./tools/start_work";
 import { proposeTool } from "./tools/propose";
 import { submitTool } from "./tools/submit";
 import { statusTool } from "./tools/status";
-import { getLinkedIssueId, remoteBranchExists, checkBranchPRState, currentBranch } from "./helpers";
+import {
+	getLinkedIssueId,
+	remoteBranchExists,
+	checkBranchPRState,
+	currentBranch,
+} from "./helpers";
 
 // ── Pre-commit hook content ─────────────────────────────────────────
 const GITLEAKS_HOOK = `#!/bin/sh
@@ -24,57 +29,57 @@ fi
 `;
 
 export default function (pi: ExtensionAPI) {
-  pi.on("tool_call", interceptToolCall);
-  pi.registerTool(startWorkTool);
-  pi.registerTool(proposeTool);
-  pi.registerTool(submitTool);
-  pi.registerTool(statusTool);
+	pi.on("tool_call", interceptToolCall);
+	pi.registerTool(startWorkTool);
+	pi.registerTool(proposeTool);
+	pi.registerTool(submitTool);
+	pi.registerTool(statusTool);
 
-  // Auto-detect linked issue from branch name on session start/resume
-  pi.on("session_start", async (_event, ctx) => {
-    const config = loadConfig(ctx.cwd);
+	// Auto-detect linked issue from branch name on session start/resume
+	pi.on("session_start", async (_event, ctx) => {
+		const config = loadConfig(ctx.cwd);
 
-    // ── Install/update gitleaks pre-commit hook ─────────────────
-    if (config.quality.secretScan) {
-      const hookPath = path.join(ctx.cwd, ".git", "hooks", "pre-commit");
-      try {
-        const existing = fs.existsSync(hookPath) ? fs.readFileSync(hookPath, "utf-8") : "";
-        if (!existing.includes("gitleaks protect --staged")) {
-          const hookContent = existing
-            ? existing.replace(/\n?$/, "\n\n") + GITLEAKS_HOOK
-            : GITLEAKS_HOOK;
-          fs.writeFileSync(hookPath, hookContent, { mode: 0o755 });
-        }
-      } catch {
-        // Non-critical — quality gate and commit intercept still catch secrets
-      }
-    }
+		// ── Install/update gitleaks pre-commit hook ─────────────────
+		if (config.quality.secretScan) {
+			const hookPath = path.join(ctx.cwd, ".git", "hooks", "pre-commit");
+			try {
+				const existing = fs.existsSync(hookPath)
+					? fs.readFileSync(hookPath, "utf-8")
+					: "";
+				if (!existing.includes("gitleaks protect --staged")) {
+					const hookContent = existing
+						? existing.replace(/\n?$/, "\n\n") + GITLEAKS_HOOK
+						: GITLEAKS_HOOK;
+					fs.writeFileSync(hookPath, hookContent, { mode: 0o755 });
+				}
+			} catch {
+				// Non-critical — quality gate and commit intercept still catch secrets
+			}
+		}
 
-    const issueId = getLinkedIssueId(ctx.cwd);
-    if (issueId && !(globalThis as any).__contrib_issueId) {
-      (globalThis as any).__contrib_issueId = issueId;
-    }
+		const issueId = getLinkedIssueId(ctx.cwd);
+		if (issueId && !(globalThis as any).__contrib_issueId) {
+			(globalThis as any).__contrib_issueId = issueId;
+		}
 
-    // Detect orphaned branch (remote deleted = PR likely merged)
-    const branch = currentBranch(ctx.cwd);
-    const isFeatureBranch = /^(feat|fix|chore)\//.test(branch);
-    if (isFeatureBranch) {
-      const remote = remoteBranchExists(ctx.cwd, undefined, config);
-      if (!remote.exists) {
-        const pr = await checkBranchPRState(ctx.cwd, undefined, config);
-        const prNote = pr
-          ? `\nPR ${pr.url} was ${pr.state}.`
-          : "";
-        ctx.ui.notify(
-          "⚠️  Orphaned branch detected",
-          `Remote branch "${branch}" no longer exists — the PR was likely merged.${prNote}\n\nDo NOT continue work on this branch. Use contrib_start_work(issue_id) to start fresh.`,
-        );
-      }
-    }
-  });
+		// Detect orphaned branch (remote deleted = PR likely merged)
+		const branch = currentBranch(ctx.cwd);
+		const isFeatureBranch = /^(feat|fix|chore)\//.test(branch);
+		if (isFeatureBranch) {
+			const remote = remoteBranchExists(ctx.cwd, undefined, config);
+			if (!remote.exists) {
+				const pr = await checkBranchPRState(ctx.cwd, undefined, config);
+				const prNote = pr ? `\nPR ${pr.url} was ${pr.state}.` : "";
+				ctx.ui.notify(
+					"⚠️  Orphaned branch detected",
+					`Remote branch "${branch}" no longer exists — the PR was likely merged.${prNote}\n\nDo NOT continue work on this branch. Use contrib_start_work(issue_id) to start fresh.`,
+				);
+			}
+		}
+	});
 
-  pi.on("session_shutdown", () => {
-    delete (globalThis as any).__contrib_issueId;
-    delete (globalThis as any).__contrib_lastHash;
-  });
+	pi.on("session_shutdown", () => {
+		delete (globalThis as any).__contrib_issueId;
+		delete (globalThis as any).__contrib_lastHash;
+	});
 }

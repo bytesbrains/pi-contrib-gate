@@ -1,12 +1,30 @@
 import { describe, it, expect } from "vitest";
-import { DEFAULT_CONFIG, BEST_PRACTICES_DEFAULTS, REMOTE_DEFAULTS } from "../types";
-import { loadConfig } from "../config";
-import { validateBranchName, validateConventionalCommit, runQualityGate } from "../validate";
 import {
-  exec, currentBranch,
-  isClean, isMergeInProgress, isRebaseInProgress, isConflictInProgress,
-  scanForConflictMarkers, getStagedStats, countUnrelatedDirs,
-  extractIssueFromBranch, resolveGitea, giteaApi, hasUnpushed, remoteBranchExists,
+	DEFAULT_CONFIG,
+	BEST_PRACTICES_DEFAULTS,
+	REMOTE_DEFAULTS,
+} from "../types";
+import { loadConfig } from "../config";
+import {
+	validateBranchName,
+	validateConventionalCommit,
+	runQualityGate,
+} from "../validate";
+import {
+	exec,
+	currentBranch,
+	isClean,
+	isMergeInProgress,
+	isRebaseInProgress,
+	isConflictInProgress,
+	scanForConflictMarkers,
+	getStagedStats,
+	countUnrelatedDirs,
+	extractIssueFromBranch,
+	resolveGitea,
+	giteaApi,
+	hasUnpushed,
+	remoteBranchExists,
 } from "../helpers";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -16,466 +34,552 @@ import * as os from "node:os";
 // Config
 // ═══════════════════════════════════════
 describe("ContribConfig", () => {
-  it("returns defaults when no config file", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-test-"));
-    const config = loadConfig(tmp);
-    expect(config.branches.featPattern).toBe("feat/");
-    expect(config.commits.convention).toBe("conventional");
-    expect(config.quality.maxFilesChanged).toBe(20);
-    expect(config.quality.maxLinesAdded).toBe(500);
-    fs.rmSync(tmp, { recursive: true, force: true });
-  });
+	it("returns defaults when no config file", () => {
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-test-"));
+		const config = loadConfig(tmp);
+		expect(config.branches.featPattern).toBe("feat/");
+		expect(config.commits.convention).toBe("conventional");
+		expect(config.quality.maxFilesChanged).toBe(20);
+		expect(config.quality.maxLinesAdded).toBe(500);
+		fs.rmSync(tmp, { recursive: true, force: true });
+	});
 
-  it("parses contribrc.yml", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-test-"));
-    fs.writeFileSync(path.join(tmp, ".contribrc.yml"), [
-      "branches.featPattern: feature/",
-      "commits.convention: simple",
-      "commits.maxSubjectLength: 100",
-      "quality.maxFilesChanged: 50",
-      "quality.lint: false",
-    ].join("\n"));
-    const config = loadConfig(tmp);
-    expect(config.branches.featPattern).toBe("feature/");
-    expect(config.commits.convention).toBe("simple");
-    expect(config.commits.maxSubjectLength).toBe(100);
-    expect(config.quality.maxFilesChanged).toBe(50);
-    expect(config.quality.lint).toBe(false);
-    fs.rmSync(tmp, { recursive: true, force: true });
-  });
+	it("parses contribrc.yml", () => {
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-test-"));
+		fs.writeFileSync(
+			path.join(tmp, ".contribrc.yml"),
+			[
+				"branches.featPattern: feature/",
+				"commits.convention: simple",
+				"commits.maxSubjectLength: 100",
+				"quality.maxFilesChanged: 50",
+				"quality.lint: false",
+			].join("\n"),
+		);
+		const config = loadConfig(tmp);
+		expect(config.branches.featPattern).toBe("feature/");
+		expect(config.commits.convention).toBe("simple");
+		expect(config.commits.maxSubjectLength).toBe(100);
+		expect(config.quality.maxFilesChanged).toBe(50);
+		expect(config.quality.lint).toBe(false);
+		fs.rmSync(tmp, { recursive: true, force: true });
+	});
 
-  it("handles missing config gracefully", () => {
-    const config = loadConfig("/nonexistent/path");
-    expect(config.branches.featPattern).toBe("feat/");
-  });
+	it("handles missing config gracefully", () => {
+		const config = loadConfig("/nonexistent/path");
+		expect(config.branches.featPattern).toBe("feat/");
+	});
 
-  it("loads bestPractices defaults", () => {
-    const config = loadConfig("/nonexistent/path");
-    expect(config.commits.bestPractices.shortFrequentCommits).toBe(true);
-    expect(config.commits.bestPractices.maxLinesPerCommit).toBe(150);
-    expect(config.commits.bestPractices.requireAtomic).toBe(true);
-    expect(config.commits.bestPractices.maxUnrelatedDirs).toBe(3);
-    expect(config.commits.bestPractices.guidanceText).toEqual(BEST_PRACTICES_DEFAULTS.guidanceText);
-  });
+	it("loads bestPractices defaults", () => {
+		const config = loadConfig("/nonexistent/path");
+		expect(config.commits.bestPractices.shortFrequentCommits).toBe(true);
+		expect(config.commits.bestPractices.maxLinesPerCommit).toBe(150);
+		expect(config.commits.bestPractices.requireAtomic).toBe(true);
+		expect(config.commits.bestPractices.maxUnrelatedDirs).toBe(3);
+		expect(config.commits.bestPractices.guidanceText).toEqual(
+			BEST_PRACTICES_DEFAULTS.guidanceText,
+		);
+	});
 
-  it("parses bestPractices config keys", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-test-"));
-    fs.writeFileSync(path.join(tmp, ".contribrc.yml"), [
-      "commits.bestPractices.shortFrequentCommits: false",
-      "commits.bestPractices.maxLinesPerCommit: 200",
-      "commits.bestPractices.requireAtomic: false",
-      "commits.bestPractices.maxUnrelatedDirs: 5",
-      'commits.bestPractices.guidanceText: "Be thoughtful | Keep it small | Test everything"',
-    ].join("\n"));
-    const config = loadConfig(tmp);
-    expect(config.commits.bestPractices.shortFrequentCommits).toBe(false);
-    expect(config.commits.bestPractices.maxLinesPerCommit).toBe(200);
-    expect(config.commits.bestPractices.requireAtomic).toBe(false);
-    expect(config.commits.bestPractices.maxUnrelatedDirs).toBe(5);
-    expect(config.commits.bestPractices.guidanceText).toEqual(["Be thoughtful", "Keep it small", "Test everything"]);
-    fs.rmSync(tmp, { recursive: true, force: true });
-  });
+	it("parses bestPractices config keys", () => {
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-test-"));
+		fs.writeFileSync(
+			path.join(tmp, ".contribrc.yml"),
+			[
+				"commits.bestPractices.shortFrequentCommits: false",
+				"commits.bestPractices.maxLinesPerCommit: 200",
+				"commits.bestPractices.requireAtomic: false",
+				"commits.bestPractices.maxUnrelatedDirs: 5",
+				'commits.bestPractices.guidanceText: "Be thoughtful | Keep it small | Test everything"',
+			].join("\n"),
+		);
+		const config = loadConfig(tmp);
+		expect(config.commits.bestPractices.shortFrequentCommits).toBe(false);
+		expect(config.commits.bestPractices.maxLinesPerCommit).toBe(200);
+		expect(config.commits.bestPractices.requireAtomic).toBe(false);
+		expect(config.commits.bestPractices.maxUnrelatedDirs).toBe(5);
+		expect(config.commits.bestPractices.guidanceText).toEqual([
+			"Be thoughtful",
+			"Keep it small",
+			"Test everything",
+		]);
+		fs.rmSync(tmp, { recursive: true, force: true });
+	});
 
-  it("defaults remote config when no keys present", () => {
-    const config = loadConfig("/nonexistent/path");
-    expect(config.remote.name).toBe("");
-    expect(config.remote.type).toBe("auto");
-    expect(config.remote.url).toBe("");
-    expect(config.remote.token).toBe("");
-  });
+	it("defaults remote config when no keys present", () => {
+		const config = loadConfig("/nonexistent/path");
+		expect(config.remote.name).toBe("");
+		expect(config.remote.type).toBe("auto");
+		expect(config.remote.url).toBe("");
+		expect(config.remote.token).toBe("");
+	});
 
-  it("parses remote config keys", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-test-"));
-    fs.writeFileSync(path.join(tmp, ".contribrc.yml"), [
-      "remote.name: gitea",
-      "remote.type: gitea",
-      "remote.url: http://gitea.example.com:3000",
-      "remote.token: abc123secret",
-    ].join("\n"));
-    const config = loadConfig(tmp);
-    expect(config.remote.name).toBe("gitea");
-    expect(config.remote.type).toBe("gitea");
-    expect(config.remote.url).toBe("http://gitea.example.com:3000");
-    expect(config.remote.token).toBe("abc123secret");
-    fs.rmSync(tmp, { recursive: true, force: true });
-  });
+	it("parses remote config keys", () => {
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-test-"));
+		fs.writeFileSync(
+			path.join(tmp, ".contribrc.yml"),
+			[
+				"remote.name: gitea",
+				"remote.type: gitea",
+				"remote.url: http://gitea.example.com:3000",
+				"remote.token: abc123secret",
+			].join("\n"),
+		);
+		const config = loadConfig(tmp);
+		expect(config.remote.name).toBe("gitea");
+		expect(config.remote.type).toBe("gitea");
+		expect(config.remote.url).toBe("http://gitea.example.com:3000");
+		expect(config.remote.token).toBe("abc123secret");
+		fs.rmSync(tmp, { recursive: true, force: true });
+	});
 
-  it("validates remote.type enum", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-test-"));
-    fs.writeFileSync(path.join(tmp, ".contribrc.yml"), [
-      "remote.type: invalid-type",
-    ].join("\n"));
-    const config = loadConfig(tmp);
-    expect(config.remote.type).toBe("auto"); // Falls back to default
-    fs.rmSync(tmp, { recursive: true, force: true });
-  });
+	it("validates remote.type enum", () => {
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-test-"));
+		fs.writeFileSync(
+			path.join(tmp, ".contribrc.yml"),
+			["remote.type: invalid-type"].join("\n"),
+		);
+		const config = loadConfig(tmp);
+		expect(config.remote.type).toBe("auto"); // Falls back to default
+		fs.rmSync(tmp, { recursive: true, force: true });
+	});
 
-  it("REMOTE_DEFAULTS matches default config", () => {
-    expect(DEFAULT_CONFIG.remote.name).toBe(REMOTE_DEFAULTS.name);
-    expect(DEFAULT_CONFIG.remote.type).toBe(REMOTE_DEFAULTS.type);
-    expect(DEFAULT_CONFIG.remote.url).toBe(REMOTE_DEFAULTS.url);
-    expect(DEFAULT_CONFIG.remote.token).toBe(REMOTE_DEFAULTS.token);
-  });
+	it("REMOTE_DEFAULTS matches default config", () => {
+		expect(DEFAULT_CONFIG.remote.name).toBe(REMOTE_DEFAULTS.name);
+		expect(DEFAULT_CONFIG.remote.type).toBe(REMOTE_DEFAULTS.type);
+		expect(DEFAULT_CONFIG.remote.url).toBe(REMOTE_DEFAULTS.url);
+		expect(DEFAULT_CONFIG.remote.token).toBe(REMOTE_DEFAULTS.token);
+	});
 
-  it("backward-compatible with existing configs (no bestPractices keys)", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-test-"));
-    fs.writeFileSync(path.join(tmp, ".contribrc.yml"), [
-      "quality.maxLinesAdded: 600",
-      "quality.doctorAudit: false",
-    ].join("\n"));
-    const config = loadConfig(tmp);
-    // Existing keys still work
-    expect(config.quality.maxLinesAdded).toBe(600);
-    expect(config.quality.doctorAudit).toBe(false);
-    // Best practices get defaults
-    expect(config.commits.bestPractices.maxLinesPerCommit).toBe(150);
-    expect(config.commits.bestPractices.shortFrequentCommits).toBe(true);
-    expect(config.commits.bestPractices.requireAtomic).toBe(true);
-    fs.rmSync(tmp, { recursive: true, force: true });
-  });
+	it("backward-compatible with existing configs (no bestPractices keys)", () => {
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-test-"));
+		fs.writeFileSync(
+			path.join(tmp, ".contribrc.yml"),
+			["quality.maxLinesAdded: 600", "quality.doctorAudit: false"].join("\n"),
+		);
+		const config = loadConfig(tmp);
+		// Existing keys still work
+		expect(config.quality.maxLinesAdded).toBe(600);
+		expect(config.quality.doctorAudit).toBe(false);
+		// Best practices get defaults
+		expect(config.commits.bestPractices.maxLinesPerCommit).toBe(150);
+		expect(config.commits.bestPractices.shortFrequentCommits).toBe(true);
+		expect(config.commits.bestPractices.requireAtomic).toBe(true);
+		fs.rmSync(tmp, { recursive: true, force: true });
+	});
 });
 
 // ═══════════════════════════════════════
 // Validation
 // ═══════════════════════════════════════
 describe("validateBranchName", () => {
-  it("accepts feat/* branches", () => {
-    expect(validateBranchName("feat/issue-42").ok).toBe(true);
-    expect(validateBranchName("feat/add-login").ok).toBe(true);
-  });
+	it("accepts feat/* branches", () => {
+		expect(validateBranchName("feat/issue-42").ok).toBe(true);
+		expect(validateBranchName("feat/add-login").ok).toBe(true);
+	});
 
-  it("accepts fix/* branches", () => {
-    expect(validateBranchName("fix/bug-123").ok).toBe(true);
-  });
+	it("accepts fix/* branches", () => {
+		expect(validateBranchName("fix/bug-123").ok).toBe(true);
+	});
 
-  it("accepts chore/* branches", () => {
-    expect(validateBranchName("chore/update-deps").ok).toBe(true);
-  });
+	it("accepts chore/* branches", () => {
+		expect(validateBranchName("chore/update-deps").ok).toBe(true);
+	});
 
-  it("rejects invalid branch names", () => {
-    expect(validateBranchName("main").ok).toBe(false);
-    expect(validateBranchName("dev").ok).toBe(false);
-    expect(validateBranchName("feature/something").ok).toBe(false);
-    expect(validateBranchName("hotfix/urgent").ok).toBe(false);
-  });
+	it("rejects invalid branch names", () => {
+		expect(validateBranchName("main").ok).toBe(false);
+		expect(validateBranchName("dev").ok).toBe(false);
+		expect(validateBranchName("feature/something").ok).toBe(false);
+		expect(validateBranchName("hotfix/urgent").ok).toBe(false);
+	});
 });
 
 describe("validateConventionalCommit", () => {
-  const config = { ...DEFAULT_CONFIG, commits: { ...DEFAULT_CONFIG.commits, maxSubjectLength: 72 } };
+	const config = {
+		...DEFAULT_CONFIG,
+		commits: { ...DEFAULT_CONFIG.commits, maxSubjectLength: 72 },
+	};
 
-  it("accepts valid conventional commits", () => {
-    expect(validateConventionalCommit("feat: add login", config).ok).toBe(true);
-    expect(validateConventionalCommit("fix(api): resolve null pointer", config).ok).toBe(true);
-    expect(validateConventionalCommit("chore(deps): update packages", config).ok).toBe(true);
-  });
+	it("accepts valid conventional commits", () => {
+		expect(validateConventionalCommit("feat: add login", config).ok).toBe(true);
+		expect(
+			validateConventionalCommit("fix(api): resolve null pointer", config).ok,
+		).toBe(true);
+		expect(
+			validateConventionalCommit("chore(deps): update packages", config).ok,
+		).toBe(true);
+	});
 
-  it("accepts all valid types", () => {
-    for (const type of ["feat", "fix", "chore", "docs", "style", "refactor", "test", "perf", "ci", "build", "revert"]) {
-      expect(validateConventionalCommit(`${type}: something`, config).ok).toBe(true);
-    }
-  });
+	it("accepts all valid types", () => {
+		for (const type of [
+			"feat",
+			"fix",
+			"chore",
+			"docs",
+			"style",
+			"refactor",
+			"test",
+			"perf",
+			"ci",
+			"build",
+			"revert",
+		]) {
+			expect(validateConventionalCommit(`${type}: something`, config).ok).toBe(
+				true,
+			);
+		}
+	});
 
-  it("rejects non-conventional messages", () => {
-    expect(validateConventionalCommit("added login", config).ok).toBe(false);
-    expect(validateConventionalCommit("Update stuff", config).ok).toBe(false);
-    expect(validateConventionalCommit("WIP", config).ok).toBe(false);
-  });
+	it("rejects non-conventional messages", () => {
+		expect(validateConventionalCommit("added login", config).ok).toBe(false);
+		expect(validateConventionalCommit("Update stuff", config).ok).toBe(false);
+		expect(validateConventionalCommit("WIP", config).ok).toBe(false);
+	});
 
-  it("rejects subject too long", () => {
-    const long = "feat: " + "x".repeat(70);
-    expect(validateConventionalCommit(long, config).ok).toBe(false);
-  });
+	it("rejects subject too long", () => {
+		const long = "feat: " + "x".repeat(70);
+		expect(validateConventionalCommit(long, config).ok).toBe(false);
+	});
 
-  it("handles multiline messages", () => {
-    const msg = "feat: add feature\n\nExtended body text here.";
-    expect(validateConventionalCommit(msg, config).ok).toBe(true);
-  });
+	it("handles multiline messages", () => {
+		const msg = "feat: add feature\n\nExtended body text here.";
+		expect(validateConventionalCommit(msg, config).ok).toBe(true);
+	});
 });
 
 // ═══════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════
 describe("exec helper", () => {
-  it("returns ok true for successful command", () => {
-    const r = exec("echo hello");
-    expect(r.ok).toBe(true);
-    expect(r.stdout).toBe("hello");
-  });
+	it("returns ok true for successful command", () => {
+		const r = exec("echo hello");
+		expect(r.ok).toBe(true);
+		expect(r.stdout).toBe("hello");
+	});
 
-  it("returns ok false for failed command", () => {
-    const r = exec("nonexistent-command-12345 2>/dev/null");
-    expect(r.ok).toBe(false);
-  });
+	it("returns ok false for failed command", () => {
+		const r = exec("nonexistent-command-12345 2>/dev/null");
+		expect(r.ok).toBe(false);
+	});
 });
 
 describe("currentBranch", () => {
-  it("returns current branch name", () => {
-    const branch = currentBranch(process.cwd());
-    expect(typeof branch).toBe("string");
-    expect(branch.length).toBeGreaterThan(0);
-  });
+	it("returns current branch name", () => {
+		const branch = currentBranch(process.cwd());
+		expect(typeof branch).toBe("string");
+		expect(branch.length).toBeGreaterThan(0);
+	});
 });
 
 describe("isClean", () => {
-  it("checks working tree status", () => {
-    const clean = isClean(process.cwd());
-    expect(typeof clean).toBe("boolean");
-  });
+	it("checks working tree status", () => {
+		const clean = isClean(process.cwd());
+		expect(typeof clean).toBe("boolean");
+	});
 });
 
 describe("getStagedStats", () => {
-  it("returns empty when nothing staged", () => {
-    const stats = getStagedStats(process.cwd());
-    expect(stats.files).toEqual([]);
-    expect(stats.linesAdded).toBe(0);
-  });
+	it("returns empty when nothing staged", () => {
+		const stats = getStagedStats(process.cwd());
+		expect(stats.files).toEqual([]);
+		expect(stats.linesAdded).toBe(0);
+	});
 
-  it("returns files and line counts for staged changes", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-stats-"));
-    exec("git init && git config user.email test@test && git config user.name test", tmp);
-    fs.writeFileSync(path.join(tmp, "a.txt"), "hello\nworld\n");
-    exec("git add a.txt && git commit -m init", tmp);
-    fs.writeFileSync(path.join(tmp, "a.txt"), "hello\nworld\nnew line\n");
-    exec("git add a.txt", tmp);
-    const stats = getStagedStats(tmp);
-    expect(stats.files).toContain("a.txt");
-    expect(stats.linesAdded).toBeGreaterThan(0);
-    fs.rmSync(tmp, { recursive: true, force: true });
-  });
+	it("returns files and line counts for staged changes", () => {
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-stats-"));
+		exec(
+			"git init && git config user.email test@test && git config user.name test",
+			tmp,
+		);
+		fs.writeFileSync(path.join(tmp, "a.txt"), "hello\nworld\n");
+		exec("git add a.txt && git commit -m init", tmp);
+		fs.writeFileSync(path.join(tmp, "a.txt"), "hello\nworld\nnew line\n");
+		exec("git add a.txt", tmp);
+		const stats = getStagedStats(tmp);
+		expect(stats.files).toContain("a.txt");
+		expect(stats.linesAdded).toBeGreaterThan(0);
+		fs.rmSync(tmp, { recursive: true, force: true });
+	});
 });
 
 describe("countUnrelatedDirs", () => {
-  it("counts distinct directories from file paths", () => {
-    const files = ["src/a.ts", "src/b.ts", "tests/c.test.ts"];
-    expect(countUnrelatedDirs(files)).toBe(2);
-  });
+	it("counts distinct directories from file paths", () => {
+		const files = ["src/a.ts", "src/b.ts", "tests/c.test.ts"];
+		expect(countUnrelatedDirs(files)).toBe(2);
+	});
 
-  it("returns 1 for single-directory changes", () => {
-    const files = ["src/index.ts", "src/config.ts", "src/types.ts"];
-    // All in src/, but 2 subdirectories: src/* (all same level, no subdirs)
-    // All have just "src" as top dir, subdirs would be "src" only
-    const result = countUnrelatedDirs(files);
-    expect(result).toBe(1);
-  });
+	it("returns 1 for single-directory changes", () => {
+		const files = ["src/index.ts", "src/config.ts", "src/types.ts"];
+		// All in src/, but 2 subdirectories: src/* (all same level, no subdirs)
+		// All have just "src" as top dir, subdirs would be "src" only
+		const result = countUnrelatedDirs(files);
+		expect(result).toBe(1);
+	});
 
-  it("detects deeply nested unrelated subdirectories", () => {
-    const files = ["contrib-gate/src/a.ts", "contrib-gate/test/b.ts", "ci-gate/src/c.ts"];
-    expect(countUnrelatedDirs(files)).toBe(3);
-  });
+	it("detects deeply nested unrelated subdirectories", () => {
+		const files = [
+			"contrib-gate/src/a.ts",
+			"contrib-gate/test/b.ts",
+			"ci-gate/src/c.ts",
+		];
+		expect(countUnrelatedDirs(files)).toBe(3);
+	});
 
-  it("handles empty file list", () => {
-    expect(countUnrelatedDirs([])).toBe(0);
-  });
+	it("handles empty file list", () => {
+		expect(countUnrelatedDirs([])).toBe(0);
+	});
 });
 
 // ═══════════════════════════════════════
 // Issue extraction from branches
 // ═══════════════════════════════════════
 describe("extractIssueFromBranch", () => {
-  it("extracts issue ID from feat/issue-N", () => {
-    expect(extractIssueFromBranch("feat/issue-42")).toBe("42");
-    expect(extractIssueFromBranch("feat/issue-7")).toBe("7");
-    expect(extractIssueFromBranch("feat/issue-123")).toBe("123");
-  });
+	it("extracts issue ID from feat/issue-N", () => {
+		expect(extractIssueFromBranch("feat/issue-42")).toBe("42");
+		expect(extractIssueFromBranch("feat/issue-7")).toBe("7");
+		expect(extractIssueFromBranch("feat/issue-123")).toBe("123");
+	});
 
-  it("extracts issue ID from fix/issue-N", () => {
-    expect(extractIssueFromBranch("fix/issue-99")).toBe("99");
-  });
+	it("extracts issue ID from fix/issue-N", () => {
+		expect(extractIssueFromBranch("fix/issue-99")).toBe("99");
+	});
 
-  it("extracts issue ID from chore/issue-N", () => {
-    expect(extractIssueFromBranch("chore/issue-1")).toBe("1");
-  });
+	it("extracts issue ID from chore/issue-N", () => {
+		expect(extractIssueFromBranch("chore/issue-1")).toBe("1");
+	});
 
-  it("extracts issue ID from bare issue-N", () => {
-    expect(extractIssueFromBranch("issue-42")).toBe("42");
-  });
+	it("extracts issue ID from bare issue-N", () => {
+		expect(extractIssueFromBranch("issue-42")).toBe("42");
+	});
 
-  it("returns null for branches without issue ID", () => {
-    expect(extractIssueFromBranch("feat/add-login")).toBe(null);
-    expect(extractIssueFromBranch("fix/bug-fix")).toBe(null);
-    expect(extractIssueFromBranch("main")).toBe(null);
-    expect(extractIssueFromBranch("dev")).toBe(null);
-    expect(extractIssueFromBranch("random-branch")).toBe(null);
-  });
+	it("returns null for branches without issue ID", () => {
+		expect(extractIssueFromBranch("feat/add-login")).toBe(null);
+		expect(extractIssueFromBranch("fix/bug-fix")).toBe(null);
+		expect(extractIssueFromBranch("main")).toBe(null);
+		expect(extractIssueFromBranch("dev")).toBe(null);
+		expect(extractIssueFromBranch("random-branch")).toBe(null);
+	});
 
-  it("returns null for issue-N in middle of branch name", () => {
-    expect(extractIssueFromBranch("feat/issue-42-hotfix")).toBe(null);
-    expect(extractIssueFromBranch("prefix-issue-42")).toBe(null);
-  });
+	it("returns null for issue-N in middle of branch name", () => {
+		expect(extractIssueFromBranch("feat/issue-42-hotfix")).toBe(null);
+		expect(extractIssueFromBranch("prefix-issue-42")).toBe(null);
+	});
 });
 
 // ═══════════════════════════════════════
 // Quality gates
 // ═══════════════════════════════════════
 describe("runQualityGate", () => {
-  it("checks changed files count", () => {
-    // In a test env without staged changes, this should pass
-    const config = { ...DEFAULT_CONFIG, quality: { ...DEFAULT_CONFIG.quality, typeCheck: false, lint: false } };
-    const result = runQualityGate(process.cwd(), config);
-    expect(typeof result.ok).toBe("boolean");
-  });
+	it("checks changed files count", () => {
+		// In a test env without staged changes, this should pass
+		const config = {
+			...DEFAULT_CONFIG,
+			quality: { ...DEFAULT_CONFIG.quality, typeCheck: false, lint: false },
+		};
+		const result = runQualityGate(process.cwd(), config);
+		expect(typeof result.ok).toBe("boolean");
+	});
 
-  it("fails when staged files contain conflict markers", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-qg-conflict-"));
-    exec("git init && git config user.email test@test && git config user.name test", tmp);
+	it("fails when staged files contain conflict markers", () => {
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-qg-conflict-"));
+		exec(
+			"git init && git config user.email test@test && git config user.name test",
+			tmp,
+		);
 
-    // Seed initial commit
-    fs.writeFileSync(path.join(tmp, "file.txt"), "clean\n");
-    exec("git add file.txt && git commit -m init", tmp);
+		// Seed initial commit
+		fs.writeFileSync(path.join(tmp, "file.txt"), "clean\n");
+		exec("git add file.txt && git commit -m init", tmp);
 
-    // Write conflict markers and stage
-    fs.writeFileSync(path.join(tmp, "file.txt"), "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> dev\n");
-    exec("git add file.txt", tmp);
+		// Write conflict markers and stage
+		fs.writeFileSync(
+			path.join(tmp, "file.txt"),
+			"<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> dev\n",
+		);
+		exec("git add file.txt", tmp);
 
-    const config = { ...DEFAULT_CONFIG, quality: { ...DEFAULT_CONFIG.quality, typeCheck: false, lint: false } };
-    const result = runQualityGate(tmp, config);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.errors.some((e: string) => e.includes("conflict markers"))).toBe(true);
-    }
+		const config = {
+			...DEFAULT_CONFIG,
+			quality: { ...DEFAULT_CONFIG.quality, typeCheck: false, lint: false },
+		};
+		const result = runQualityGate(tmp, config);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(
+				result.errors.some((e: string) => e.includes("conflict markers")),
+			).toBe(true);
+		}
 
-    fs.rmSync(tmp, { recursive: true, force: true });
-  });
+		fs.rmSync(tmp, { recursive: true, force: true });
+	});
 });
 
 // ═══════════════════════════════════════
 // Merge conflict helpers
 // ═══════════════════════════════════════
 describe("isMergeInProgress", () => {
-  it("returns false when no merge in progress", () => {
-    expect(isMergeInProgress(process.cwd())).toBe(false);
-  });
+	it("returns false when no merge in progress", () => {
+		expect(isMergeInProgress(process.cwd())).toBe(false);
+	});
 });
 
 describe("isRebaseInProgress", () => {
-  it("returns false when no rebase in progress", () => {
-    expect(isRebaseInProgress(process.cwd())).toBe(false);
-  });
+	it("returns false when no rebase in progress", () => {
+		expect(isRebaseInProgress(process.cwd())).toBe(false);
+	});
 });
 
 describe("isConflictInProgress", () => {
-  it("returns false when no conflict in progress", () => {
-    expect(isConflictInProgress(process.cwd())).toBe(false);
-  });
+	it("returns false when no conflict in progress", () => {
+		expect(isConflictInProgress(process.cwd())).toBe(false);
+	});
 });
 
 // ═══════════════════════════════════════
 // Conflict marker scanning
 // ═══════════════════════════════════════
 describe("scanForConflictMarkers", () => {
-  it("returns empty when no conflict markers in staged files", () => {
-    const result = scanForConflictMarkers(process.cwd());
-    expect(result).toEqual([]);
-  });
+	it("returns empty when no conflict markers in staged files", () => {
+		const result = scanForConflictMarkers(process.cwd());
+		expect(result).toEqual([]);
+	});
 
-  it("detects conflict markers in a staged file (simulated via git show)", () => {
-    // Create a temp repo to test conflict detection properly
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-conflict-"));
-    exec("git init && git config user.email test@test && git config user.name test", tmp);
+	it("detects conflict markers in a staged file (simulated via git show)", () => {
+		// Create a temp repo to test conflict detection properly
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-conflict-"));
+		exec(
+			"git init && git config user.email test@test && git config user.name test",
+			tmp,
+		);
 
-    // Create a file with conflict markers
-    const filePath = path.join(tmp, "test.txt");
-    fs.writeFileSync(filePath, [
-      "line before",
-      "<<<<<<< HEAD",
-      "our change",
-      "=======",
-      "their change",
-      ">>>>>>> dev",
-      "line after",
-    ].join("\n"));
+		// Create a file with conflict markers
+		const filePath = path.join(tmp, "test.txt");
+		fs.writeFileSync(
+			filePath,
+			[
+				"line before",
+				"<<<<<<< HEAD",
+				"our change",
+				"=======",
+				"their change",
+				">>>>>>> dev",
+				"line after",
+			].join("\n"),
+		);
 
-    // Stage and commit a clean version first (need initial commit for git show :0:)
-    fs.writeFileSync(filePath, "clean content\n");
-    exec(`git add test.txt && git commit -m "init"`, tmp);
+		// Stage and commit a clean version first (need initial commit for git show :0:)
+		fs.writeFileSync(filePath, "clean content\n");
+		exec(`git add test.txt && git commit -m "init"`, tmp);
 
-    // Now write conflict markers and stage
-    fs.writeFileSync(filePath, "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> dev\n");
-    exec("git add test.txt", tmp);
+		// Now write conflict markers and stage
+		fs.writeFileSync(
+			filePath,
+			"<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> dev\n",
+		);
+		exec("git add test.txt", tmp);
 
-    const result = scanForConflictMarkers(tmp);
-    expect(result).toContain("test.txt");
+		const result = scanForConflictMarkers(tmp);
+		expect(result).toContain("test.txt");
 
-    fs.rmSync(tmp, { recursive: true, force: true });
-  });
+		fs.rmSync(tmp, { recursive: true, force: true });
+	});
 
-  it("returns empty for clean staged files", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-clean-"));
-    exec("git init && git config user.email test@test && git config user.name test", tmp);
+	it("returns empty for clean staged files", () => {
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-clean-"));
+		exec(
+			"git init && git config user.email test@test && git config user.name test",
+			tmp,
+		);
 
-    fs.writeFileSync(path.join(tmp, "clean.txt"), "no conflicts here\n");
-    exec("git add clean.txt && git commit -m init", tmp);
-    fs.writeFileSync(path.join(tmp, "clean.txt"), "updated clean content\n");
-    exec("git add clean.txt", tmp);
+		fs.writeFileSync(path.join(tmp, "clean.txt"), "no conflicts here\n");
+		exec("git add clean.txt && git commit -m init", tmp);
+		fs.writeFileSync(path.join(tmp, "clean.txt"), "updated clean content\n");
+		exec("git add clean.txt", tmp);
 
-    const result = scanForConflictMarkers(tmp);
-    expect(result).toEqual([]);
+		const result = scanForConflictMarkers(tmp);
+		expect(result).toEqual([]);
 
-    fs.rmSync(tmp, { recursive: true, force: true });
-  });
+		fs.rmSync(tmp, { recursive: true, force: true });
+	});
 });
 
 // ═══════════════════════════════════════
 // Remote config helpers
 // ═══════════════════════════════════════
 describe("resolveGitea with remote config", () => {
-  it("works without config (backward compat)", () => {
-    const result = resolveGitea(process.cwd());
-    expect(result).toHaveProperty("repo");
-    expect(result).toHaveProperty("token");
-    expect(result).toHaveProperty("apiUrl");
-    expect(result.apiUrl).toBe("http://127.0.0.1:3001");
-  });
+	it("works without config (backward compat)", () => {
+		const result = resolveGitea(process.cwd());
+		expect(result).toHaveProperty("repo");
+		expect(result).toHaveProperty("token");
+		expect(result).toHaveProperty("apiUrl");
+		expect(result.apiUrl).toBe("http://127.0.0.1:3001");
+	});
 
-  it("uses config token as fallback when no URL-embedded token", () => {
-    // URL-embedded token takes priority. Config token is fallback for SSH remotes.
-    const config = { ...DEFAULT_CONFIG, remote: { ...DEFAULT_CONFIG.remote, token: "test-token-123" } };
-    const result = resolveGitea(process.cwd(), config);
-    // When URL has embedded creds, that takes priority; otherwise config token is used
-    expect(result.token.length).toBeGreaterThan(0);
-  });
+	it("uses config token as fallback when no URL-embedded token", () => {
+		// URL-embedded token takes priority. Config token is fallback for SSH remotes.
+		const config = {
+			...DEFAULT_CONFIG,
+			remote: { ...DEFAULT_CONFIG.remote, token: "test-token-123" },
+		};
+		const result = resolveGitea(process.cwd(), config);
+		// When URL has embedded creds, that takes priority; otherwise config token is used
+		expect(result.token.length).toBeGreaterThan(0);
+	});
 
-  it("uses config url for custom Gitea instance", () => {
-    const config = { ...DEFAULT_CONFIG, remote: { ...DEFAULT_CONFIG.remote, url: "https://gitea.mycompany.com" } };
-    const result = resolveGitea(process.cwd(), config);
-    expect(result.apiUrl).toBe("https://gitea.mycompany.com");
-  });
+	it("uses config url for custom Gitea instance", () => {
+		const config = {
+			...DEFAULT_CONFIG,
+			remote: { ...DEFAULT_CONFIG.remote, url: "https://gitea.mycompany.com" },
+		};
+		const result = resolveGitea(process.cwd(), config);
+		expect(result.apiUrl).toBe("https://gitea.mycompany.com");
+	});
 });
 
 describe("giteaApi error handling", () => {
-  it("never includes token in error messages", async () => {
-    const opts = { repo: "user/repo", token: "secret-token-abc123", apiUrl: "http://0.0.0.0:1" };
-    const result = await giteaApi("/issues/99999", "GET", null, opts);
-    expect(result.ok).toBe(false);
-    expect(result.error).not.toContain("secret-token-abc123");
-    expect(result.error).not.toContain("abc123");
-  });
+	it("never includes token in error messages", async () => {
+		const opts = {
+			repo: "user/repo",
+			token: "secret-token-abc123",
+			apiUrl: "http://0.0.0.0:1",
+		};
+		const result = await giteaApi("/issues/99999", "GET", null, opts);
+		expect(result.ok).toBe(false);
+		expect(result.error).not.toContain("secret-token-abc123");
+		expect(result.error).not.toContain("abc123");
+	});
 });
 
 describe("hasUnpushed with remote config", () => {
-  it("uses configured remote name", () => {
-    const config = { ...DEFAULT_CONFIG, remote: { ...DEFAULT_CONFIG.remote, name: "gitea" } };
-    const result = hasUnpushed(process.cwd(), config);
-    expect(typeof result).toBe("boolean");
-  });
+	it("uses configured remote name", () => {
+		const config = {
+			...DEFAULT_CONFIG,
+			remote: { ...DEFAULT_CONFIG.remote, name: "gitea" },
+		};
+		const result = hasUnpushed(process.cwd(), config);
+		expect(typeof result).toBe("boolean");
+	});
 
-  it("falls back to auto-detect without config", () => {
-    const result = hasUnpushed(process.cwd());
-    expect(typeof result).toBe("boolean");
-  });
+	it("falls back to auto-detect without config", () => {
+		const result = hasUnpushed(process.cwd());
+		expect(typeof result).toBe("boolean");
+	});
 });
 
 describe("remoteBranchExists with remote config", () => {
-  it("uses configured remote name when set", () => {
-    const config = { ...DEFAULT_CONFIG, remote: { ...DEFAULT_CONFIG.remote, name: "gitea" } };
-    const result = remoteBranchExists(process.cwd(), undefined, config);
-    expect(result).toHaveProperty("exists");
-    expect(typeof result.remoteName).toBe("string");
-  });
+	it("uses configured remote name when set", () => {
+		const config = {
+			...DEFAULT_CONFIG,
+			remote: { ...DEFAULT_CONFIG.remote, name: "gitea" },
+		};
+		const result = remoteBranchExists(process.cwd(), undefined, config);
+		expect(result).toHaveProperty("exists");
+		expect(typeof result.remoteName).toBe("string");
+	});
 
-  it("falls back to origin/gitea without config", () => {
-    const result = remoteBranchExists(process.cwd());
-    expect(result).toHaveProperty("exists");
-    expect(typeof result.remoteName).toBe("string");
-  });
+	it("falls back to origin/gitea without config", () => {
+		const result = remoteBranchExists(process.cwd());
+		expect(result).toHaveProperty("exists");
+		expect(typeof result.remoteName).toBe("string");
+	});
 });

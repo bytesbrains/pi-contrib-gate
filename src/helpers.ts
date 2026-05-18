@@ -99,11 +99,15 @@ export function hasUnpushed(cwd: string, config?: ContribConfig): boolean {
 	const branch = currentBranch(cwd);
 	const remote = config?.remote.name;
 	if (remote) {
-		const r = exec(
-			`git log ${remote}/${branch}..HEAD --oneline 2>/dev/null || echo ""`,
-			cwd,
-		);
-		return r.ok && r.stdout.length > 0;
+		// Validate the configured remote exists; fall back to auto-detect if not
+		const remoteCheck = exec(`git remote get-url ${remote} 2>/dev/null`, cwd);
+		if (remoteCheck.ok) {
+			const r = exec(
+				`git log ${remote}/${branch}..HEAD --oneline 2>/dev/null || echo ""`,
+				cwd,
+			);
+			return r.ok && r.stdout.length > 0;
+		}
 	}
 	const r = exec(
 		`git log origin/${branch}..HEAD --oneline 2>/dev/null || git log gitea/${branch}..HEAD --oneline 2>/dev/null || echo ""`,
@@ -416,6 +420,7 @@ export async function giteaApi(
 	const url = `${base}${path}`;
 	const headers: Record<string, string> = {
 		"Content-Type": "application/json",
+		"Accept": "application/json",
 	};
 	if (opts.token) headers["Authorization"] = `token ${opts.token}`;
 

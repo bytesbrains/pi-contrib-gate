@@ -90,6 +90,7 @@ remote.token: your-gitea-pat-here
 ```
 
 > ⚠️ **Security:** The token is never included in logs, error messages, or debug output.
+> If `.contribrc.yml` is committed to your repo, add it to `.gitignore` or use an empty `remote.token` and rely on a URL-embedded PAT or environment-level credential store instead.
 
 ## Example Workflow
 
